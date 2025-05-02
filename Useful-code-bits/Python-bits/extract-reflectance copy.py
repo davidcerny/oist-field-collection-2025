@@ -1,0 +1,59 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from spectral import envi, get_rgb
+from skimage.draw import polygon
+import os
+
+# File paths
+hdr_path = '/Users/rosamariorduna/Downloads/binandhdr_folder/test.hdr'
+bin_path = '/Users/rosamariorduna/Downloads/binandhdr_folder/test.bin'
+
+# Load ENVI image and binary data
+data = envi.open(hdr_path, image=bin_path)
+cube = data.load()
+
+# Create an RGB composite for visualization (adjust bands if needed)
+rgb = get_rgb(data, [20, 40, 60]).astype(np.float32)
+
+# Brightness/contrast adjustment using percentile stretch
+p2, p98 = np.percentile(rgb, (2, 98))
+rgb = np.clip((rgb - p2) / (p98 - p2), 0, 1)  # Normalize between 0 and 1
+
+# Interactive polygon selection with larger display window
+plt.figure(figsize=(12, 10))  # Larger figure size
+plt.imshow(rgb)
+plt.title("Draw a polygon around the color patch (right click or enter to finish)")
+pts = plt.ginput(n=-1, timeout=0, show_clicks=True)
+plt.close()
+
+# Convert polygon to mask
+r = np.array([p[1] for p in pts])
+c = np.array([p[0] for p in pts])
+rr, cc = polygon(r, c, cube.shape[:2])
+mask = np.zeros(cube.shape[:2], dtype=bool)
+mask[rr, cc] = True
+
+# Extract spectra from the masked region
+spectra = cube[mask, :]
+avg_spectrum = spectra.mean(axis=0)
+std_spectrum = spectra.std(axis=0)
+
+# Generate wavelength array from 350 to 1000 nm
+wavelengths = np.linspace(350, 1000, cube.shape[2])
+
+# Plot spectrum with standard deviation
+plt.figure()
+plt.plot(wavelengths, avg_spectrum, label='Mean Reflectance')
+plt.fill_between(wavelengths, avg_spectrum - std_spectrum, avg_spectrum + std_spectrum, alpha=0.3, label='Std Dev')
+plt.title("Average Reflectance Spectrum with Standard Deviation")
+plt.xlabel("Wavelength (nm)")
+plt.ylabel("Reflectance")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Save results to CSV
+output_data = np.column_stack((wavelengths, avg_spectrum, std_spectrum))
+output_path = '/Users/rosamariorduna/Downloads/binandhdr_folder/average_spectrum_with_std.csv'
+np.savetxt(output_path, output_data, delimiter=',', header='Wavelength (nm),Mean Reflectance,Std Dev', comments='')
+print(f"Spectrum with standard deviation saved to: {output_path}")
