@@ -20,7 +20,7 @@ p2, p98 = np.percentile(rgb, (2, 98))
 rgb = np.clip((rgb - p2) / (p98 - p2), 0, 1)  # Normalize between 0 and 1
 
 # Interactive polygon selection with larger display window
-plt.figure(figsize=(12, 10))  # Larger figure size
+plt.figure(figsize=(12, 8))  # Larger figure size
 plt.imshow(rgb)
 plt.title("Draw a polygon around the color patch (right click or enter to finish)")
 pts = plt.ginput(n=-1, timeout=0, show_clicks=True)
