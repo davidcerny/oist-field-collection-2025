@@ -6,9 +6,13 @@ from spectral import envi, get_rgb
 from skimage.draw import polygon
 import os
 
-# File paths
-hdr_path = '/Users/rosamariorduna/Downloads/binandhdr_folder/test.hdr'. # make paths relative and put data files in DATA folder
-bin_path = '/Users/rosamariorduna/Downloads/binandhdr_folder/test.bin'
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+
+hdr_path = os.path.join(script_dir, '..', 'DATA', 'RO_004_5_2025-04-17_01-08-18_.hdr')
+bin_path = os.path.join(script_dir, '..', 'DATA', 'RO_004_5_2025-04-17_01-08-18_.bin')
+
 
 # Load ENVI image and binary data
 data = envi.open(hdr_path, image=bin_path)
@@ -44,7 +48,7 @@ low_slider = Slider(ax_low, 'Low %', 0, 10, valinit=1)
 high_slider = Slider(ax_high, 'High %', 90, 100, valinit=99)
 gain_slider = Slider(ax_gain, 'Gain', 0.5, 2.0, valinit=1)
 offset_slider = Slider(ax_offset, 'Offset', -0.5, 0.5, valinit=0)
-radio = RadioButtons(ax_radio, band_options.keys())
+radio = RadioButtons(ax_radio, list(band_options.keys()))
 
 # Global for final image
 final_rgb = None
