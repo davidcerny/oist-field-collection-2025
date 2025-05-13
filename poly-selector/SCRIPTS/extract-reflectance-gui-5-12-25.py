@@ -1,4 +1,3 @@
-
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button, RadioButtons
@@ -72,7 +71,7 @@ def reset(event):
 
 def save_rgb(event):
     update()
-    out_path = '/Users/rosamariorduna/Downloads/binandhdr_folder/current_rgb_preview.png'
+    out_path = '/Users/David/Downloads/current_rgb_preview.png'
     plt.imsave(out_path, img_disp.get_array())
     print(f"Saved RGB preview to: {out_path}")
 
@@ -91,8 +90,6 @@ def continue_to_polygon(event):
     p_low, p_high = np.percentile(rgb_raw, (low, high))
     final_rgb = np.clip((rgb_raw - p_low) / (p_high - p_low), 0, 1)
     final_rgb = np.clip(gain * final_rgb + offset, 0, 1)
-
-
 
     ax.clear()
     ax.imshow(final_rgb)
@@ -129,7 +126,27 @@ def continue_to_polygon(event):
         plt.grid(True)
         plt.show()
 
+        polygon_data = np.column_stack((r, c))
+        polygon_path = f'/Users/David/Downloads/polygon_{len(all_pts)}.csv'
+        np.savetxt(polygon_path, polygon_data, delimiter=',', header='X_coord,Y_coord', comments='')
+        print(f"Polygon saved to: {polygon_path}")
+
         output_data = np.column_stack((wavelengths, avg_spectrum, std_spectrum))
-        output_path = f'/Users/rosamariorduna/Downloads/binandhdr_folder/spectrum_polygon_{len(all_pts)}.csv'
+        output_path = f'/Users/David/Downloads/spectrum_polygon_{len(all_pts)}.csv'
         np.savetxt(output_path, output_data, delimiter=',', header='Wavelength (nm),Mean Reflectance,Std Dev', comments='')
         print(f"Spectrum saved to: {output_path}")
+
+# Connect widgets
+low_slider.on_changed(update)
+high_slider.on_changed(update)
+gain_slider.on_changed(update)
+offset_slider.on_changed(update)
+reset_button = Button(ax_reset, 'Reset')
+reset_button.on_clicked(reset)
+save_button = Button(ax_save, 'Save RGB')
+save_button.on_clicked(save_rgb)
+continue_button = Button(ax_continue, 'Continue to Polygon')
+continue_button.on_clicked(continue_to_polygon)
+radio.on_clicked(change_band)
+
+plt.show()
