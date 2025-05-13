@@ -82,7 +82,7 @@ def change_band(label):
     update()
 
 def continue_to_polygon(event):
-    global final_rgb
+    global final_rgb, current_points, drawing_polygon
     low = low_slider.val
     high = high_slider.val
     gain = gain_slider.val
@@ -93,23 +93,56 @@ def continue_to_polygon(event):
 
     ax.clear()
     ax.imshow(final_rgb)
-    ax.set_title("Draw polygons (Right-click or press Enter to finish each). Press 'q' in terminal to quit.")
+    ax.set_title("Draw polygons (Click to add points, press Enter to finish polygon, 'q' to quit)")
     fig.canvas.draw_idle()
 
     all_pts = []
-    print("Draw your polygons. Press 'q' in the terminal to stop.")
+    current_points = []
+    drawing_polygon = True
 
-    while True:
-        pts = plt.ginput(n=-1, timeout=0, show_clicks=True)
-        if not pts:
-            break  # no clicks = quit
+    def on_click(event):
+        if event.inaxes != ax or not drawing_polygon:
+            return
+        current_points.append((event.xdata, event.ydata))
+        ax.plot(event.xdata, event.ydata, 'ro')
+        if len(current_points) > 1:
+            ax.plot([current_points[-2][0], current_points[-1][0]], 
+                   [current_points[-2][1], current_points[-1][1]], 'r-')
+        fig.canvas.draw_idle()
 
-        all_pts.append(pts)
+    def on_key(event):
+        global drawing_polygon, current_points
+        if event.key == 'enter' and current_points:
+            print(f"\nProcessing polygon {len(all_pts) + 1} with {len(current_points)} points")
+            # Store the current points before clearing
+            pts_to_process = current_points.copy()
+            all_pts.append(pts_to_process)
+            current_points.clear()
+            # Process the stored points
+            process_polygon(pts_to_process, len(all_pts))
+        elif event.key == 'q':
+            # Process any remaining points before quitting
+            if current_points:
+                print(f"\nProcessing final polygon {len(all_pts) + 1} with {len(current_points)} points")
+                pts_to_process = current_points.copy()
+                all_pts.append(pts_to_process)
+                process_polygon(pts_to_process, len(all_pts))
+            print(f"\nTotal polygons processed: {len(all_pts)}")
+            drawing_polygon = False
+            plt.disconnect(cid_click)
+            plt.disconnect(cid_key)
+
+    def process_polygon(pts, polygon_num):
+        print(f"Processing polygon {polygon_num} with {len(pts)} points")
         r = np.array([p[1] for p in pts])
         c = np.array([p[0] for p in pts])
         rr, cc = polygon(r, c, cube.shape[:2])
         mask = np.zeros(cube.shape[:2], dtype=bool)
         mask[rr, cc] = True
+
+        # Draw the polygon on the image
+        ax.plot(c, r, 'r-', linewidth=2)
+        fig.canvas.draw_idle()
 
         spectra = cube[mask, :]
         avg_spectrum = spectra.mean(axis=0)
@@ -119,22 +152,30 @@ def continue_to_polygon(event):
         plt.figure()
         plt.plot(wavelengths, avg_spectrum, label='Mean Reflectance')
         plt.fill_between(wavelengths, avg_spectrum - std_spectrum, avg_spectrum + std_spectrum, alpha=0.3, label='Std Dev')
-        plt.title("Average Reflectance Spectrum with Standard Deviation")
+        plt.title(f"Average Reflectance Spectrum with Standard Deviation for Polygon {polygon_num}")
         plt.xlabel("Wavelength (nm)")
         plt.ylabel("Reflectance")
         plt.legend()
         plt.grid(True)
         plt.show()
 
+        # Save polygon coordinates
         polygon_data = np.column_stack((r, c))
-        polygon_path = f'/Users/David/Downloads/polygon_{len(all_pts)}.csv'
+        polygon_path = f'/Users/David/Downloads/polygon_{polygon_num}.csv'
         np.savetxt(polygon_path, polygon_data, delimiter=',', header='X_coord,Y_coord', comments='')
-        print(f"Polygon saved to: {polygon_path}")
+        print(f"Saved polygon {polygon_num} coordinates to: {polygon_path}")
+        print(f"Polygon data shape: {polygon_data.shape}")
 
+        # Save spectrum data
         output_data = np.column_stack((wavelengths, avg_spectrum, std_spectrum))
-        output_path = f'/Users/David/Downloads/spectrum_polygon_{len(all_pts)}.csv'
+        output_path = f'/Users/David/Downloads/spectrum_polygon_{polygon_num}.csv'
         np.savetxt(output_path, output_data, delimiter=',', header='Wavelength (nm),Mean Reflectance,Std Dev', comments='')
-        print(f"Spectrum saved to: {output_path}")
+        print(f"Saved spectrum for polygon {polygon_num} to: {output_path}")
+        print(f"Spectrum data shape: {output_data.shape}")
+
+    cid_click = fig.canvas.mpl_connect('button_press_event', on_click)
+    cid_key = fig.canvas.mpl_connect('key_press_event', on_key)
+    print("Draw your polygons. Click to add points, press Enter to finish each polygon, 'q' to quit.")
 
 # Connect widgets
 low_slider.on_changed(update)
