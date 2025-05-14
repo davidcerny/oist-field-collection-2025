@@ -144,7 +144,21 @@ def continue_to_polygon(event):
         ax.plot(c, r, 'r-', linewidth=2)
         fig.canvas.draw_idle()
 
+        # Get all points in the polygon
         spectra = cube[mask, :]
+        
+        # Randomly sample 100 points (or all points if less than 100)
+        n_samples = min(100, len(spectra))
+        if n_samples < len(spectra):
+            # Get random indices without replacement
+            sample_indices = np.random.choice(len(spectra), n_samples, replace=False)
+            subsample = spectra[sample_indices]
+        else:
+            subsample = spectra
+
+        print(f"Subsample size: {len(subsample)}")
+        print(subsample[0])
+
         avg_spectrum = spectra.mean(axis=0)
         std_spectrum = spectra.std(axis=0)
 
@@ -166,12 +180,22 @@ def continue_to_polygon(event):
         print(f"Saved polygon {polygon_num} coordinates to: {polygon_path}")
         print(f"Polygon data shape: {polygon_data.shape}")
 
-        # Save spectrum data
+        # Save spectrum data for the whole polygon (mean + standard deviation)
         output_data = np.column_stack((wavelengths, avg_spectrum, std_spectrum))
         output_path = f'/Users/David/Downloads/spectrum_polygon_{polygon_num}.csv'
         np.savetxt(output_path, output_data, delimiter=',', header='Wavelength (nm),Mean Reflectance,Std Dev', comments='')
         print(f"Saved spectrum for polygon {polygon_num} to: {output_path}")
         print(f"Spectrum data shape: {output_data.shape}")
+
+        # Save spectrum data for the subsample (random 100 points)
+        # Create header with wavelength and sample numbers
+        header = 'Wavelength (nm),' + ','.join([f'Pixel_{i+1}' for i in range(len(subsample))])
+        # Stack wavelengths with transposed subsample (each column will be the spectrum of one sample)
+        subsample_data = np.column_stack((wavelengths, subsample.T))
+        subsample_path = f'/Users/David/Downloads/spectrum_polygon_{polygon_num}_random_sample.csv'
+        np.savetxt(subsample_path, subsample_data, delimiter=',', header=header, comments='')
+        print(f"Saved subsample spectrum for polygon {polygon_num} to: {subsample_path}")
+        print(f"Subsample spectrum data shape: {subsample_data.shape}")
 
     cid_click = fig.canvas.mpl_connect('button_press_event', on_click)
     cid_key = fig.canvas.mpl_connect('key_press_event', on_key)
