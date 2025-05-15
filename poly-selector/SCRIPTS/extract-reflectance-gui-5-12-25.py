@@ -4,6 +4,7 @@ from matplotlib.widgets import Slider, Button, RadioButtons
 from spectral import envi, get_rgb
 from skimage.draw import polygon
 import os
+from matplotlib.colors import to_rgba
 
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -100,14 +101,33 @@ def continue_to_polygon(event):
     current_points = []
     drawing_polygon = True
 
+    # Create a colormap with 10 distinct colors from hsv
+    colors = plt.cm.hsv(np.linspace(0, 1, 10))
+    # Create a list to track used colors
+    used_colors = []
+    # Shuffle the colors for random selection
+    np.random.shuffle(colors)
+
+    def get_next_color():
+        if len(used_colors) < len(colors):
+            # If we haven't used all colors, pick a new one
+            color = colors[len(used_colors)]
+            used_colors.append(color)
+            return color
+        else:
+            # If we've used all colors, start recycling
+            return colors[len(used_colors) % len(colors)]
+
     def on_click(event):
         if event.inaxes != ax or not drawing_polygon:
             return
         current_points.append((event.xdata, event.ydata))
-        ax.plot(event.xdata, event.ydata, 'ro')
+        # Use the color for the current polygon number
+        color = get_next_color() if len(current_points) == 1 else used_colors[-1]
+        ax.plot(event.xdata, event.ydata, 'o', color=color)
         if len(current_points) > 1:
             ax.plot([current_points[-2][0], current_points[-1][0]], 
-                   [current_points[-2][1], current_points[-1][1]], 'r-')
+                   [current_points[-2][1], current_points[-1][1]], '-', color=color)
         fig.canvas.draw_idle()
 
     def on_key(event):
@@ -140,8 +160,9 @@ def continue_to_polygon(event):
         mask = np.zeros(cube.shape[:2], dtype=bool)
         mask[rr, cc] = True
 
-        # Draw the polygon on the image
-        ax.plot(c, r, 'r-', linewidth=2)
+        # Draw the polygon on the image with its assigned color
+        color = used_colors[polygon_num - 1] if polygon_num <= len(used_colors) else colors[polygon_num % len(colors)]
+        ax.plot(c, r, '-', linewidth=2, color=color)
         fig.canvas.draw_idle()
 
         # Get all points in the polygon
