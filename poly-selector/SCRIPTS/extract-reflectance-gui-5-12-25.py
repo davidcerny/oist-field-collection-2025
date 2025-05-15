@@ -163,6 +163,15 @@ def continue_to_polygon(event):
         # Draw the polygon on the image with its assigned color
         color = used_colors[polygon_num - 1] if polygon_num <= len(used_colors) else colors[polygon_num % len(colors)]
         ax.plot(c, r, '-', linewidth=2, color=color)
+        
+        # Calculate and plot the centroid with the label
+        centroid_x = np.mean(c)
+        centroid_y = np.mean(r)
+        ax.text(centroid_x, centroid_y, str(polygon_num), 
+                color=color, fontsize=12, fontweight='bold',
+                ha='center', va='center',
+                bbox=dict(facecolor='none', edgecolor='none', boxstyle='round,pad=0.3'))
+        
         fig.canvas.draw_idle()
 
         # Get all points in the polygon
