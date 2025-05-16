@@ -5,6 +5,7 @@ from matplotlib.widgets import Slider, Button, RadioButtons
 from spectral import envi, get_rgb
 from skimage.draw import polygon
 import os
+from matplotlib.colors import to_rgba
 
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -92,29 +93,103 @@ def continue_to_polygon(event):
     final_rgb = np.clip((rgb_raw - p_low) / (p_high - p_low), 0, 1)
     final_rgb = np.clip(gain * final_rgb + offset, 0, 1)
 
-
-
     ax.clear()
     ax.imshow(final_rgb)
     ax.set_title("Draw polygons (Right-click or press Enter to finish each). Press 'q' in terminal to quit.")
     fig.canvas.draw_idle()
 
     all_pts = []
-    print("Draw your polygons. Press 'q' in the terminal to stop.")
+    current_points = []
+    drawing_polygon = True
 
-    while True:
-        pts = plt.ginput(n=-1, timeout=0, show_clicks=True)
-        if not pts:
-            break  # no clicks = quit
+    # Create a colormap with 10 distinct colors from hsv
+    colors = plt.cm.hsv(np.linspace(0, 1, 10))
+    # Create a list to track used colors
+    used_colors = []
+    # Shuffle the colors for random selection
+    np.random.shuffle(colors)
 
-        all_pts.append(pts)
+    def get_next_color():
+        if len(used_colors) < len(colors):
+            # If we haven't used all colors, pick a new one
+            color = colors[len(used_colors)]
+            used_colors.append(color)
+            return color
+        else:
+            # If we've used all colors, start recycling
+            return colors[len(used_colors) % len(colors)]
+
+    def on_click(event):
+        if event.inaxes != ax or not drawing_polygon:
+            return
+        current_points.append((event.xdata, event.ydata))
+        # Use the color for the current polygon number
+        color = get_next_color() if len(current_points) == 1 else used_colors[-1]
+        ax.plot(event.xdata, event.ydata, 'o', color=color)
+        if len(current_points) > 1:
+            ax.plot([current_points[-2][0], current_points[-1][0]], 
+                   [current_points[-2][1], current_points[-1][1]], '-', color=color)
+        fig.canvas.draw_idle()
+
+    def on_key(event):
+        global drawing_polygon, current_points
+        if event.key == 'enter' and current_points:
+            print(f"\nProcessing polygon {len(all_pts) + 1} with {len(current_points)} points")
+            # Store the current points before clearing
+            pts_to_process = current_points.copy()
+            all_pts.append(pts_to_process)
+            current_points.clear()
+            # Process the stored points
+            process_polygon(pts_to_process, len(all_pts))
+        elif event.key == 'q':
+            # Process any remaining points before quitting
+            if current_points:
+                print(f"\nProcessing final polygon {len(all_pts) + 1} with {len(current_points)} points")
+                pts_to_process = current_points.copy()
+                all_pts.append(pts_to_process)
+                process_polygon(pts_to_process, len(all_pts))
+            print(f"\nTotal polygons processed: {len(all_pts)}")
+            drawing_polygon = False
+            plt.disconnect(cid_click)
+            plt.disconnect(cid_key)
+
+    def process_polygon(pts, polygon_num):
+        print(f"Processing polygon {polygon_num} with {len(pts)} points")
         r = np.array([p[1] for p in pts])
         c = np.array([p[0] for p in pts])
         rr, cc = polygon(r, c, cube.shape[:2])
         mask = np.zeros(cube.shape[:2], dtype=bool)
         mask[rr, cc] = True
 
+        # Draw the polygon on the image with its assigned color
+        color = used_colors[polygon_num - 1] if polygon_num <= len(used_colors) else colors[polygon_num % len(colors)]
+        ax.plot(c, r, '-', linewidth=2, color=color)
+        
+        # Calculate and plot the centroid with the label
+        centroid_x = np.mean(c)
+        centroid_y = np.mean(r)
+        ax.text(centroid_x, centroid_y, str(polygon_num), 
+                color=color, fontsize=12, fontweight='bold',
+                ha='center', va='center',
+                bbox=dict(facecolor='none', edgecolor='none', boxstyle='round,pad=0.3'))
+        
+        fig.canvas.draw_idle()
+
+        # Get all points in the polygon
         spectra = cube[mask, :]
+        
+        # Randomly sample 100 points (or all points if less than 100)
+        n_samples = min(100, len(spectra))
+        if n_samples < len(spectra):
+            # Get random indices without replacement
+            sample_indices = np.random.choice(len(spectra), n_samples, replace=False)
+            subsample = spectra[sample_indices]
+        else:
+            subsample = spectra
+
+        print(f"Subsample size: {len(subsample)}")
+        print(subsample[0])
+
         avg_spectrum = spectra.mean(axis=0)
         std_spectrum = spectra.std(axis=0)
 
@@ -129,7 +204,45 @@ def continue_to_polygon(event):
         plt.grid(True)
         plt.show()
 
+        # Save polygon coordinates
+        polygon_data = np.column_stack((r, c))
+        polygon_path = f'/Users/David/Downloads/polygon_{polygon_num}.csv'
+        np.savetxt(polygon_path, polygon_data, delimiter=',', header='X_coord,Y_coord', comments='')
+        print(f"Saved polygon {polygon_num} coordinates to: {polygon_path}")
+        print(f"Polygon data shape: {polygon_data.shape}")
+
+        # Save spectrum data for the whole polygon (mean + standard deviation)
         output_data = np.column_stack((wavelengths, avg_spectrum, std_spectrum))
         output_path = f'/Users/rosamariorduna/Downloads/binandhdr_folder/spectrum_polygon_{len(all_pts)}.csv'
         np.savetxt(output_path, output_data, delimiter=',', header='Wavelength (nm),Mean Reflectance,Std Dev', comments='')
-        print(f"Spectrum saved to: {output_path}")
+        print(f"Saved spectrum for polygon {polygon_num} to: {output_path}")
+        print(f"Spectrum data shape: {output_data.shape}")
+
+        # Save spectrum data for the subsample (random 100 points)
+        # Create header with wavelength and sample numbers
+        header = 'Wavelength (nm),' + ','.join([f'Pixel_{i+1}' for i in range(len(subsample))])
+        # Stack wavelengths with transposed subsample (each column will be the spectrum of one sample)
+        subsample_data = np.column_stack((wavelengths, subsample.T))
+        subsample_path = f'/Users/David/Downloads/spectrum_polygon_{polygon_num}_random_sample.csv'
+        np.savetxt(subsample_path, subsample_data, delimiter=',', header=header, comments='')
+        print(f"Saved subsample spectrum for polygon {polygon_num} to: {subsample_path}")
+        print(f"Subsample spectrum data shape: {subsample_data.shape}")
+
+    cid_click = fig.canvas.mpl_connect('button_press_event', on_click)
+    cid_key = fig.canvas.mpl_connect('key_press_event', on_key)
+    print("Draw your polygons. Click to add points, press Enter to finish each polygon, 'q' to quit.")
+
+# Connect widgets
+low_slider.on_changed(update)
+high_slider.on_changed(update)
+gain_slider.on_changed(update)
+offset_slider.on_changed(update)
+reset_button = Button(ax_reset, 'Reset')
+reset_button.on_clicked(reset)
+save_button = Button(ax_save, 'Save RGB')
+save_button.on_clicked(save_rgb)
+continue_button = Button(ax_continue, 'Continue to Polygon')
+continue_button.on_clicked(continue_to_polygon)
+radio.on_clicked(change_band)
+
+plt.show()
