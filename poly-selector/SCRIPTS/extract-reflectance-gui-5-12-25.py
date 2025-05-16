@@ -1,3 +1,4 @@
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button, RadioButtons
@@ -72,7 +73,7 @@ def reset(event):
 
 def save_rgb(event):
     update()
-    out_path = '/Users/David/Downloads/current_rgb_preview.png'
+    out_path = '/Users/rosamariorduna/Downloads/binandhdr_folder/current_rgb_preview.png'
     plt.imsave(out_path, img_disp.get_array())
     print(f"Saved RGB preview to: {out_path}")
 
@@ -83,7 +84,7 @@ def change_band(label):
     update()
 
 def continue_to_polygon(event):
-    global final_rgb, current_points, drawing_polygon
+    global final_rgb
     low = low_slider.val
     high = high_slider.val
     gain = gain_slider.val
@@ -94,7 +95,7 @@ def continue_to_polygon(event):
 
     ax.clear()
     ax.imshow(final_rgb)
-    ax.set_title("Draw polygons (Click to add points, press Enter to finish polygon, 'q' to quit)")
+    ax.set_title("Draw polygons (Right-click or press Enter to finish each). Press 'q' in terminal to quit.")
     fig.canvas.draw_idle()
 
     all_pts = []
@@ -196,7 +197,7 @@ def continue_to_polygon(event):
         plt.figure()
         plt.plot(wavelengths, avg_spectrum, label='Mean Reflectance')
         plt.fill_between(wavelengths, avg_spectrum - std_spectrum, avg_spectrum + std_spectrum, alpha=0.3, label='Std Dev')
-        plt.title(f"Average Reflectance Spectrum with Standard Deviation for Polygon {polygon_num}")
+        plt.title("Average Reflectance Spectrum with Standard Deviation")
         plt.xlabel("Wavelength (nm)")
         plt.ylabel("Reflectance")
         plt.legend()
@@ -212,7 +213,7 @@ def continue_to_polygon(event):
 
         # Save spectrum data for the whole polygon (mean + standard deviation)
         output_data = np.column_stack((wavelengths, avg_spectrum, std_spectrum))
-        output_path = f'/Users/David/Downloads/spectrum_polygon_{polygon_num}.csv'
+        output_path = f'/Users/rosamariorduna/Downloads/binandhdr_folder/spectrum_polygon_{len(all_pts)}.csv'
         np.savetxt(output_path, output_data, delimiter=',', header='Wavelength (nm),Mean Reflectance,Std Dev', comments='')
         print(f"Saved spectrum for polygon {polygon_num} to: {output_path}")
         print(f"Spectrum data shape: {output_data.shape}")
