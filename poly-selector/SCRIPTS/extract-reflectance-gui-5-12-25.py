@@ -29,19 +29,23 @@ rgb_raw = get_rgb(data, selected_bands).astype(np.float32)
 
 # Setup figure and sliders
 fig, ax = plt.subplots(figsize=(12, 8))
-plt.subplots_adjust(left=0.3, bottom=0.4)
+plt.subplots_adjust(left=0.15, bottom=0.1, right=1.15)
 img_disp = ax.imshow(rgb_raw, vmin=0, vmax=1)
 ax.set_title("Adjust sliders, then click 'Continue to Polygon'")
 
-# GUI elements
-ax_low = plt.axes([0.35, 0.26, 0.55, 0.03])
-ax_high = plt.axes([0.35, 0.22, 0.55, 0.03])
-ax_gain = plt.axes([0.35, 0.18, 0.55, 0.03])
-ax_offset = plt.axes([0.35, 0.14, 0.55, 0.03])
-ax_reset = plt.axes([0.82, 0.02, 0.12, 0.04])
-ax_save = plt.axes([0.65, 0.02, 0.15, 0.04])
-ax_continue = plt.axes([0.35, 0.02, 0.25, 0.04])
-ax_radio = plt.axes([0.02, 0.6, 0.25, 0.25], frameon=True)
+# GUI elements - all on the left side
+ax_radio = plt.axes([0.02, 0.65, 0.25, 0.25], frameon=True)  # Radio buttons at the top
+
+# Sliders below radio buttons - made shorter to fit labels
+ax_low = plt.axes([0.07, 0.5, 0.2, 0.03])
+ax_high = plt.axes([0.07, 0.45, 0.2, 0.03])
+ax_gain = plt.axes([0.07, 0.4, 0.2, 0.03])
+ax_offset = plt.axes([0.07, 0.35, 0.2, 0.03])
+
+# Buttons at the bottom
+ax_reset = plt.axes([0.02, 0.2, 0.25, 0.04])
+ax_save = plt.axes([0.02, 0.15, 0.25, 0.04])
+ax_continue = plt.axes([0.02, 0.1, 0.25, 0.04])
 
 # Sliders
 low_slider = Slider(ax_low, 'Low %', 0, 10, valinit=1)
