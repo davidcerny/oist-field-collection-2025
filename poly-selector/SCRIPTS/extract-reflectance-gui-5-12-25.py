@@ -19,6 +19,10 @@ bin_path = os.path.join(script_dir, '..', 'DATA', 'RO_004_5_2025-04-17_01-08-18_
 data = envi.open(hdr_path, image=bin_path)
 cube = data.load()
 
+# Print image resolution
+print(f"\nImage resolution: {cube.shape[0]} x {cube.shape[1]} pixels")
+print(f"Number of spectral bands: {cube.shape[2]}\n")
+
 # Define RGB combinations
 band_options = {
     'Default (20,40,60)': [20, 40, 60],
@@ -208,8 +212,8 @@ def continue_to_polygon(event):
         plt.grid(True)
         plt.show()
 
-        # Save polygon coordinates
-        polygon_data = np.column_stack((r, c))
+        # Save normalizedpolygon coordinates
+        polygon_data = np.column_stack((r / cube.shape[0], c / cube.shape[1]))
         polygon_path = f'/Users/David/Downloads/polygon_{polygon_num}.csv'
         np.savetxt(polygon_path, polygon_data, delimiter=',', header='X_coord,Y_coord', comments='')
         print(f"Saved polygon {polygon_num} coordinates to: {polygon_path}")
