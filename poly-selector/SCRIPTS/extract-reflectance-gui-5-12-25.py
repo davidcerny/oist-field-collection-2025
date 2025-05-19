@@ -196,7 +196,6 @@ def continue_to_polygon(event):
             subsample = spectra
 
         print(f"Subsample size: {len(subsample)}")
-        print(subsample[0])
 
         avg_spectrum = spectra.mean(axis=0)
         std_spectrum = spectra.std(axis=0)
@@ -212,7 +211,7 @@ def continue_to_polygon(event):
         plt.grid(True)
         plt.show()
 
-        # Save normalizedpolygon coordinates
+        # Save normalized polygon coordinates
         polygon_data = np.column_stack((r / cube.shape[0], c / cube.shape[1]))
         polygon_path = f'/Users/David/Downloads/polygon_{polygon_num}.csv'
         np.savetxt(polygon_path, polygon_data, delimiter=',', header='X_coord,Y_coord', comments='')
