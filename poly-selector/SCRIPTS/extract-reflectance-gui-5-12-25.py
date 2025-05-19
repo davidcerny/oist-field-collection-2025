@@ -216,14 +216,14 @@ def continue_to_polygon(event):
         polygon_path = f'/Users/David/Downloads/polygon_{polygon_num}.csv'
         np.savetxt(polygon_path, polygon_data, delimiter=',', header='X_coord,Y_coord', comments='')
         print(f"Saved polygon {polygon_num} coordinates to: {polygon_path}")
-        print(f"Polygon data shape: {polygon_data.shape}")
+        print(f"Polygon data: {polygon_data.shape[0]} rows (vertices), {polygon_data.shape[1]} columns (coordinates)\n")
 
         # Save spectrum data for the whole polygon (mean + standard deviation)
         output_data = np.column_stack((wavelengths, avg_spectrum, std_spectrum))
         output_path = f'/Users/rosamariorduna/Downloads/binandhdr_folder/spectrum_polygon_{len(all_pts)}.csv'
         np.savetxt(output_path, output_data, delimiter=',', header='Wavelength (nm),Mean Reflectance,Std Dev', comments='')
         print(f"Saved spectrum for polygon {polygon_num} to: {output_path}")
-        print(f"Spectrum data shape: {output_data.shape}")
+        print(f"Summary spectrum data: {output_data.shape[0]} rows (spectral bands), {output_data.shape[1]} columns (wavelength, mean, st. dev.)\n")
 
         # Save spectrum data for the subsample (random 100 points)
         # Create header with wavelength and sample numbers
@@ -233,7 +233,7 @@ def continue_to_polygon(event):
         subsample_path = f'/Users/David/Downloads/spectrum_polygon_{polygon_num}_random_sample.csv'
         np.savetxt(subsample_path, subsample_data, delimiter=',', header=header, comments='')
         print(f"Saved subsample spectrum for polygon {polygon_num} to: {subsample_path}")
-        print(f"Subsample spectrum data shape: {subsample_data.shape}")
+        print(f"Subsample spectrum data: {subsample_data.shape[0]} rows (spectral bands), {subsample_data.shape[1]} columns (wavelength + 100 points)\n")
 
     cid_click = fig.canvas.mpl_connect('button_press_event', on_click)
     cid_key = fig.canvas.mpl_connect('key_press_event', on_key)
