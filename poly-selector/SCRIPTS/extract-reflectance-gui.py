@@ -5,14 +5,24 @@ from spectral import envi, get_rgb
 from skimage.draw import polygon
 import os
 from matplotlib.colors import to_rgba
+import argparse
 
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Extract reflectance data from ENVI image using polygon selection.')
+parser.add_argument('-f', '--filename', required=True, help='Base filename of the ENVI image (without extension)')
+args = parser.parse_args()
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
+# Check for and create OUTPUT directory if it doesn't exist
+output_dir = os.path.join(script_dir, '..', 'OUTPUT')
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+    print(f"Created OUTPUT directory at: {output_dir}")
 
-hdr_path = os.path.join(script_dir, '..', 'DATA', 'RO_004_5_2025-04-17_01-08-18_.hdr')
-bin_path = os.path.join(script_dir, '..', 'DATA', 'RO_004_5_2025-04-17_01-08-18_.bin')
-
+# Construct paths using the provided filename
+hdr_path = os.path.join(script_dir, '..', 'DATA', args.filename + '.hdr')
+bin_path = os.path.join(script_dir, '..', 'DATA', args.filename + '.bin')
 
 # Load ENVI image and binary data
 data = envi.open(hdr_path, image=bin_path)
@@ -80,7 +90,7 @@ def reset(event):
 
 def save_rgb(event):
     update()
-    out_path = '/Users/David/Downloads/current_rgb_preview.png'
+    out_path = '{output_dir}/{args.filename}current_rgb_preview.png'
     plt.imsave(out_path, img_disp.get_array())
     print(f"Saved RGB preview to: {out_path}")
 
@@ -212,16 +222,16 @@ def continue_to_polygon(event):
 
         # Save normalized polygon coordinates
         polygon_data = np.column_stack((r / cube.shape[0], c / cube.shape[1]))
-        polygon_path = f'/Users/David/Downloads/polygon_{polygon_num}.csv'
+        polygon_path = f'{output_dir}/{args.filename}polygon_{polygon_num}.csv'
         np.savetxt(polygon_path, polygon_data, delimiter=',', header='X_coord,Y_coord', comments='')
         print(f"Saved polygon {polygon_num} coordinates to: {polygon_path}")
         print(f"Polygon data: {polygon_data.shape[0]} rows (vertices), {polygon_data.shape[1]} columns (coordinates)\n")
 
         # Save spectrum data for the whole polygon (mean + standard deviation)
         output_data = np.column_stack((wavelengths, avg_spectrum, std_spectrum))
-        output_path = f'/Users/David/Downloads/spectrum_polygon_{polygon_num}.csv'
+        output_path = f'{output_dir}/{args.filename}spectrum_polygon_{polygon_num}.csv'
         np.savetxt(output_path, output_data, delimiter=',', header='Wavelength (nm),Mean Reflectance,Std Dev', comments='')
-        print(f"Saved spectrum for polygon {polygon_num} to: {output_path}")
+        print(f"Saved spectrum summary for polygon {polygon_num} to: {output_path}")
         print(f"Summary spectrum data: {output_data.shape[0]} rows (spectral bands), {output_data.shape[1]} columns (wavelength, mean, st. dev.)\n")
 
         # Save spectrum data for the subsample (random 100 points)
@@ -229,9 +239,9 @@ def continue_to_polygon(event):
         header = 'Wavelength (nm),' + ','.join([f'Pixel_{i+1}' for i in range(len(subsample))])
         # Stack wavelengths with transposed subsample (each column will be the spectrum of one sample)
         subsample_data = np.column_stack((wavelengths, subsample.T))
-        subsample_path = f'/Users/David/Downloads/spectrum_polygon_{polygon_num}_random_sample.csv'
+        subsample_path = f'{output_dir}/{args.filename}spectrum_polygon_{polygon_num}_random_sample.csv'
         np.savetxt(subsample_path, subsample_data, delimiter=',', header=header, comments='')
-        print(f"Saved subsample spectrum for polygon {polygon_num} to: {subsample_path}")
+        print(f"Saved spectrum subsample for polygon {polygon_num} to: {subsample_path}")
         print(f"Subsample spectrum data: {subsample_data.shape[0]} rows (spectral bands), {subsample_data.shape[1]} columns (wavelength + 100 points)\n")
 
     cid_click = fig.canvas.mpl_connect('button_press_event', on_click)
