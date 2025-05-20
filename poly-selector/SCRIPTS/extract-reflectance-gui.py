@@ -178,14 +178,14 @@ def process_polygon(pts, polygon_num, ax, cube, output_dir, args, used_colors, c
         # Save normalized polygon coordinates
         # Note: X_coord corresponds to column (shape[1]) and Y_coord to row (shape[0])
         polygon_data = np.column_stack((c / cube.shape[1], r / cube.shape[0]))
-        polygon_path = f'{output_dir}/{args.filename}polygon_{polygon_num}.csv'
+        polygon_path = f'{output_dir}/{args.filename}_polygon_{polygon_num}.csv'
         np.savetxt(polygon_path, polygon_data, delimiter=',', header='X_coord,Y_coord', comments='')
         print(f"Saved polygon {polygon_num} coordinates to: {polygon_path}")
         print(f"Polygon data: {polygon_data.shape[0]} rows (vertices), {polygon_data.shape[1]} columns (coordinates)\n")
 
         # Save spectrum data for the whole polygon (mean + standard deviation)
         output_data = np.column_stack((wavelengths, avg_spectrum, std_spectrum))
-        output_path = f'{output_dir}/{args.filename}spectrum_polygon_{polygon_num}_summary.csv'
+        output_path = f'{output_dir}/{args.filename}_spectrum_polygon_{polygon_num}_summary.csv'
         np.savetxt(output_path, output_data, delimiter=',', header='Wavelength (nm),Mean Reflectance,Std Dev', comments='')
         print(f"Saved spectrum summary for polygon {polygon_num} to: {output_path}")
         print(f"Summary spectrum data: {output_data.shape[0]} rows (spectral bands), {output_data.shape[1]} columns (wavelength, mean, st. dev.)\n")
@@ -195,7 +195,7 @@ def process_polygon(pts, polygon_num, ax, cube, output_dir, args, used_colors, c
         header = 'Wavelength (nm),' + ','.join([f'Pixel_{i+1}' for i in range(len(subsample))])
         # Stack wavelengths with transposed subsample (each column will be the spectrum of one sample)
         subsample_data = np.column_stack((wavelengths, subsample.T))
-        subsample_path = f'{output_dir}/{args.filename}spectrum_polygon_{polygon_num}_random_sample.csv'
+        subsample_path = f'{output_dir}/{args.filename}_spectrum_polygon_{polygon_num}_random_sample.csv'
         np.savetxt(subsample_path, subsample_data, delimiter=',', header=header, comments='')
         print(f"Saved spectrum subsample for polygon {polygon_num} to: {subsample_path}")
         print(f"Subsample spectrum data: {subsample_data.shape[0]} rows (spectral bands), {subsample_data.shape[1]} columns (wavelength + 100 points)")
@@ -288,7 +288,7 @@ def load_polygons(event):
     final_rgb = np.clip(gain * final_rgb + offset, 0, 1)
     
     # Check for existing polygon CSV files in the output directory
-    pattern = f'{output_dir}/{args.filename}polygon_*.csv'
+    pattern = f'{output_dir}/{args.filename}_polygon_*.csv'
     polygon_files = glob.glob(pattern)
     
     if polygon_files:
