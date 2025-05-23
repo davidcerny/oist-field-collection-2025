@@ -214,6 +214,17 @@ def process_polygon(pts, polygon_num, ax, cube, output_dir, args, used_colors, c
         print(f"Saved spectrum subsample for polygon {polygon_num} to: {subsample_path}")
         print(f"Subsample spectrum data: {subsample_data.shape[0]} rows (pixels), {subsample_data.shape[1]} columns (coordinates + wavelengths)")
 
+def get_next_polygon_number(output_dir, args):
+    """Get the next polygon number by finding the highest existing number and adding 1."""
+    pattern = f'{output_dir}/{args.filename}_polygon_*.csv'
+    polygon_files = glob.glob(pattern)
+    if not polygon_files:
+        return 1
+    
+    # Extract numbers from filenames and find the maximum
+    numbers = [int(f.split('_')[-1].split('.')[0]) for f in polygon_files]
+    return max(numbers) + 1
+
 def continue_to_polygon(event):
     global final_rgb, current_points, drawing_polygon
     low = low_slider.val
@@ -224,8 +235,8 @@ def continue_to_polygon(event):
     final_rgb = np.clip((rgb_raw - p_low) / (p_high - p_low), 0, 1)
     final_rgb = np.clip(gain * final_rgb + offset, 0, 1)
 
-    ax.clear()
-    ax.imshow(final_rgb)
+    # Instead of clearing the axis, just update the image
+    ax.images[0].set_data(final_rgb)
     ax.set_title("Draw polygons (Click to add points, press Enter to finish polygon, 'q' to quit)")
     fig.canvas.draw_idle()
 
@@ -240,22 +251,25 @@ def continue_to_polygon(event):
     # Shuffle the colors for random selection
     np.random.shuffle(colors)
 
-    def get_next_color():
-        if len(used_colors) < len(colors):
+    def get_color_for_polygon(polygon_num):
+        # Get the color for a specific polygon number, ensuring consistency
+        if polygon_num > len(used_colors):
             # If we haven't used all colors, pick a new one
-            color = colors[len(used_colors)]
+            color = colors[(polygon_num - 1) % len(colors)]
             used_colors.append(color)
-            return color
         else:
-            # If we've used all colors, start recycling
-            return colors[len(used_colors) % len(colors)]
+            # If we've used this number before, return the existing color
+            color = used_colors[polygon_num - 1]
+        return color
 
     def on_click(event):
         if event.inaxes != ax or not drawing_polygon:
             return
         current_points.append((event.xdata, event.ydata))
-        # Use the color for the current polygon number
-        color = get_next_color() if len(current_points) == 1 else used_colors[-1]
+        # Get the next polygon number
+        polygon_num = get_next_polygon_number(output_dir, args)
+        # Get the color for this polygon number
+        color = get_color_for_polygon(polygon_num)
         ax.plot(event.xdata, event.ydata, 'o', color=color)
         if len(current_points) > 1:
             ax.plot([current_points[-2][0], current_points[-1][0]], 
@@ -265,34 +279,42 @@ def continue_to_polygon(event):
     def on_key(event):
         global drawing_polygon, current_points
         if event.key == 'enter' and current_points:
+            # Get the next polygon number
+            polygon_num = get_next_polygon_number(output_dir, args)
+            # Get the color for this polygon number
+            color = get_color_for_polygon(polygon_num)
+            
             # Draw the closing edge from last point to first point
             if len(current_points) > 2:  # Only draw closing edge if we have at least 3 points
-                color = used_colors[-1]  # Use the same color as the polygon
                 ax.plot([current_points[-1][0], current_points[0][0]], 
                        [current_points[-1][1], current_points[0][1]], '-', color=color)
                 fig.canvas.draw_idle()
             
-            print(f"\nProcessing polygon {len(all_pts) + 1} with {len(current_points)} points")
+            print(f"\nProcessing polygon {polygon_num} with {len(current_points)} points")
             # Store the current points before clearing
             pts_to_process = current_points.copy()
             all_pts.append(pts_to_process)
             current_points.clear()
             # Process the stored points and save data
-            process_polygon(pts_to_process, len(all_pts), ax, cube, output_dir, args, used_colors, colors, save_data=True)
+            process_polygon(pts_to_process, polygon_num, ax, cube, output_dir, args, used_colors, colors, save_data=True)
         elif event.key == 'q':
             # Process any remaining points before quitting
             if current_points:
+                # Get the next polygon number
+                polygon_num = get_next_polygon_number(output_dir, args)
+                # Get the color for this polygon number
+                color = get_color_for_polygon(polygon_num)
+                
                 # Draw the closing edge from last point to first point
                 if len(current_points) > 2:  # Only draw closing edge if we have at least 3 points
-                    color = used_colors[-1]  # Use the same color as the polygon
                     ax.plot([current_points[-1][0], current_points[0][0]], 
                            [current_points[-1][1], current_points[0][1]], '-', color=color)
                     fig.canvas.draw_idle()
                 
-                print(f"\nProcessing final polygon {len(all_pts) + 1} with {len(current_points)} points")
+                print(f"\nProcessing final polygon {polygon_num} with {len(current_points)} points")
                 pts_to_process = current_points.copy()
                 all_pts.append(pts_to_process)
-                process_polygon(pts_to_process, len(all_pts), ax, cube, output_dir, args, used_colors, colors, save_data=True)
+                process_polygon(pts_to_process, polygon_num, ax, cube, output_dir, args, used_colors, colors, save_data=True)
             print(f"\nTotal polygons processed: {len(all_pts)}")
             drawing_polygon = False
             plt.disconnect(cid_click)
