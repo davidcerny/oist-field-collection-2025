@@ -127,7 +127,13 @@ def process_polygon(pts, polygon_num, ax, cube, output_dir, args, used_colors, c
 
     # Draw the polygon on the image with its assigned color
     color = used_colors[polygon_num - 1] if polygon_num <= len(used_colors) else colors[polygon_num % len(colors)]
+    
+    # Draw the polygon edges
     ax.plot(c, r, '-', linewidth=2, color=color)
+    
+    # Draw the closing edge if we have at least 3 points
+    if len(pts) > 2:
+        ax.plot([c[-1], c[0]], [r[-1], r[0]], '-', linewidth=2, color=color)
     
     # Calculate and plot the centroid with the label
     centroid_x = np.mean(c)
@@ -250,6 +256,13 @@ def continue_to_polygon(event):
     def on_key(event):
         global drawing_polygon, current_points
         if event.key == 'enter' and current_points:
+            # Draw the closing edge from last point to first point
+            if len(current_points) > 2:  # Only draw closing edge if we have at least 3 points
+                color = used_colors[-1]  # Use the same color as the polygon
+                ax.plot([current_points[-1][0], current_points[0][0]], 
+                       [current_points[-1][1], current_points[0][1]], '-', color=color)
+                fig.canvas.draw_idle()
+            
             print(f"\nProcessing polygon {len(all_pts) + 1} with {len(current_points)} points")
             # Store the current points before clearing
             pts_to_process = current_points.copy()
@@ -260,6 +273,13 @@ def continue_to_polygon(event):
         elif event.key == 'q':
             # Process any remaining points before quitting
             if current_points:
+                # Draw the closing edge from last point to first point
+                if len(current_points) > 2:  # Only draw closing edge if we have at least 3 points
+                    color = used_colors[-1]  # Use the same color as the polygon
+                    ax.plot([current_points[-1][0], current_points[0][0]], 
+                           [current_points[-1][1], current_points[0][1]], '-', color=color)
+                    fig.canvas.draw_idle()
+                
                 print(f"\nProcessing final polygon {len(all_pts) + 1} with {len(current_points)} points")
                 pts_to_process = current_points.copy()
                 all_pts.append(pts_to_process)
@@ -365,7 +385,6 @@ def load_polygons(event):
         
         def on_no(event):
             plt.close(dialog_fig)
-            print("Spectrum plots not shown. Main window remains active.")
         
         yes_button.on_clicked(on_yes)
         no_button.on_clicked(on_no)
