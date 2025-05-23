@@ -339,9 +339,21 @@ def load_polygons(event):
         fig.canvas.draw_idle()
         print(f"\nLoaded {len(all_pts)} polygons from CSV files.")
         
-        # Ask user if they want to see the spectra
-        response = input("\nWould you like to see the spectrum plots? (y/n): ")
-        if response.lower() == 'y':
+        # Create a new figure for the button dialog
+        dialog_fig = plt.figure(figsize=(4, 2))
+        dialog_ax = dialog_fig.add_subplot(111)
+        dialog_ax.text(0.5, 0.6, "Would you like to see the spectrum plots?",
+                      ha='center', va='center', transform=dialog_ax.transAxes)
+        dialog_ax.set_axis_off()
+        
+        # Create buttons
+        ax_yes = plt.axes([0.3, 0.2, 0.2, 0.2])
+        ax_no = plt.axes([0.6, 0.2, 0.2, 0.2])
+        yes_button = Button(ax_yes, 'Yes')
+        no_button = Button(ax_no, 'No')
+        
+        def on_yes(event):
+            plt.close(dialog_fig)
             # Enable interactive mode for non-blocking plots
             plt.ion()
             # Second pass: show spectra for each polygon
@@ -349,7 +361,15 @@ def load_polygons(event):
                 process_polygon(pts, i, ax, cube, output_dir, args, used_colors, colors, save_data=False, show_spectrum=True)
             # Keep the plots open
             plt.ioff()
-            plt.show()
+            plt.show(block=False)
+        
+        def on_no(event):
+            plt.close(dialog_fig)
+            print("Spectrum plots not shown. Main window remains active.")
+        
+        yes_button.on_clicked(on_yes)
+        no_button.on_clicked(on_no)
+        plt.show(block=True)
     else:
         print("\nNo existing polygon files found.")
 
