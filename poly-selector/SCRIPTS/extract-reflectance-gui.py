@@ -148,14 +148,21 @@ def process_polygon(pts, polygon_num, ax, cube, output_dir, args, used_colors, c
     # Get all points in the polygon
     spectra = cube[mask, :]
     
+    # Get coordinates of all points in the polygon
+    # Create arrays of x and y coordinates for all pixels in the polygon
+    y_coords, x_coords = np.where(mask)
+    coords = np.column_stack((x_coords, y_coords))  # x, y coordinates for each pixel
+    
     # Randomly sample 100 points (or all points if less than 100)
     n_samples = min(100, len(spectra))
     if n_samples < len(spectra):
         # Get random indices without replacement
         sample_indices = np.random.choice(len(spectra), n_samples, replace=False)
         subsample = spectra[sample_indices]
+        subsample_coords = coords[sample_indices]  # Get coordinates for sampled points
     else:
         subsample = spectra
+        subsample_coords = coords
 
     avg_spectrum = spectra.mean(axis=0)
     std_spectrum = spectra.std(axis=0)
@@ -195,15 +202,17 @@ def process_polygon(pts, polygon_num, ax, cube, output_dir, args, used_colors, c
         print(f"Saved spectrum summary for polygon {polygon_num} to: {output_path}")
         print(f"Summary spectrum data: {output_data.shape[0]} rows (spectral bands), {output_data.shape[1]} columns (wavelength, mean, st. dev.)\n")
 
-        # Save spectrum data for the subsample (random 100 points)
-        # Create header with wavelength and sample numbers
-        header = 'Wavelength (nm),' + ','.join([f'Pixel_{i+1}' for i in range(len(subsample))])
-        # Stack wavelengths with transposed subsample (each column will be the spectrum of one sample)
-        subsample_data = np.column_stack((wavelengths, subsample.T))
+        # Save coordinates and spectrum data for the subsample (random 100 points)
+        # Create header with coordinates and wavelengths
+        header = 'X_coord,Y_coord,' + ','.join([f'{w:.1f}' for w in wavelengths])
+        # Stack coordinates with spectral data
+        subsample_data = np.column_stack((subsample_coords, subsample))
         subsample_path = f'{output_dir}/{args.filename}_spectrum_polygon_{polygon_num}_random_sample.csv'
-        np.savetxt(subsample_path, subsample_data, delimiter=',', header=header, comments='')
+        # Create format string: integers for coordinates, scientific notation for spectra
+        fmt = ['%d', '%d'] + ['%.6e'] * subsample.shape[1]
+        np.savetxt(subsample_path, subsample_data, delimiter=',', header=header, comments='', fmt=fmt)
         print(f"Saved spectrum subsample for polygon {polygon_num} to: {subsample_path}")
-        print(f"Subsample spectrum data: {subsample_data.shape[0]} rows (spectral bands), {subsample_data.shape[1]} columns (wavelength + 100 points)")
+        print(f"Subsample spectrum data: {subsample_data.shape[0]} rows (pixels), {subsample_data.shape[1]} columns (coordinates + wavelengths)")
 
 def continue_to_polygon(event):
     global final_rgb, current_points, drawing_polygon
