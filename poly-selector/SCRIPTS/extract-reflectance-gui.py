@@ -34,16 +34,41 @@ cube = data.load()
 print(f"\nImage resolution: {cube.shape[0]} x {cube.shape[1]} pixels")
 print(f"Number of spectral bands: {cube.shape[2]}\n")
 
-# Define RGB combinations: which bands to extract for the red, green, and blue channels, respectively
-band_options = {
-    'Default (54,32,22)': [54, 32, 22],
-    'Alt 1 (10,30,50)': [10, 30, 50],
-    'Alt 2 (30,50,70)': [30, 50, 70]
-}
-selected_bands = band_options['Default (54,32,22)']
-rgb_raw = get_rgb(data, selected_bands).astype(np.float32)
+# Define wavelength ranges for RGB (in nanometers)
+wavelengths = np.linspace(350, 1000, cube.shape[2])
+red_range = (620, 750)    # Red light
+green_range = (495, 570)  # Green light
+blue_range = (450, 495)   # Blue light
 
-my_wavelengths = np.linspace(350, 1000, cube.shape[2])
+def get_band_indices(wavelengths, range_min, range_max):
+    # Get indices of bands within a wavelength range
+    return np.where((wavelengths >= range_min) & (wavelengths <= range_max))[0]
+
+def resample_band(cube, band_indices):
+    # Resample a range of bands by averaging
+    return np.mean(cube[:, :, band_indices], axis=2)
+
+# Get band indices for RGB
+red_indices = get_band_indices(wavelengths, *red_range)
+green_indices = get_band_indices(wavelengths, *green_range)
+blue_indices = get_band_indices(wavelengths, *blue_range)
+
+# Resample bands for RGB
+red_band = resample_band(cube, red_indices)
+green_band = resample_band(cube, green_indices)
+blue_band = resample_band(cube, blue_indices)
+
+# Stack the bands to create RGB image
+rgb_raw = np.stack([red_band, green_band, blue_band], axis=2).astype(np.float32)
+
+# Normalize each band independently
+for i in range(3):
+    band = rgb_raw[:, :, i]
+    min_val = np.percentile(band, 1)  # Use 1st percentile to avoid outliers
+    max_val = np.percentile(band, 99)  # Use 99th percentile to avoid outliers
+    rgb_raw[:, :, i] = np.clip((band - min_val) / (max_val - min_val), 0, 1)
+
+my_wavelengths = wavelengths  # Keep the original wavelengths for spectrum plotting
 
 # Setup figure and sliders
 fig, ax = plt.subplots(figsize=(12, 8))
@@ -71,7 +96,6 @@ low_slider = Slider(ax_low, 'Low %', 0, 10, valinit=1)
 high_slider = Slider(ax_high, 'High %', 90, 100, valinit=99)
 gain_slider = Slider(ax_gain, 'Gain', 0.5, 2.0, valinit=1)
 offset_slider = Slider(ax_offset, 'Offset', -0.5, 0.5, valinit=0)
-radio = RadioButtons(ax_radio, list(band_options.keys()))
 
 # Global for final image
 final_rgb = None
@@ -99,15 +123,9 @@ def reset(event):
 
 def save_rgb(event):
     update()
-    out_path = '{output_dir}/{args.filename}current_rgb_preview.png'
+    out_path = f'{output_dir}/{args.filename}_current_rgb_preview.png'
     plt.imsave(out_path, img_disp.get_array())
     print(f"Saved RGB preview to: {out_path}")
-
-def change_band(label):
-    global rgb_raw
-    selected = band_options[label]
-    rgb_raw = get_rgb(data, selected).astype(np.float32)
-    update()
 
 def process_polygon(pts, polygon_num, ax, cube, output_dir, args, used_colors, colors, save_data=True, show_spectrum=True):
     """Process a polygon and extract reflectance data.
@@ -835,6 +853,5 @@ continue_button = Button(ax_continue, 'Continue to Polygon')
 continue_button.on_clicked(continue_to_polygon)
 load_button = Button(ax_load, 'Load Polygon Data')
 load_button.on_clicked(load_polygons)
-radio.on_clicked(change_band)
 
 plt.show()
