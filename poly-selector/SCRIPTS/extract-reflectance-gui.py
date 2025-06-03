@@ -122,6 +122,7 @@ final_rgb = None
 # Add these global variables at the top of the file, after the imports
 all_polygons = {}  # Dictionary to store all polygons and their data
 spectrum_figs = {}  # Dictionary to store spectrum plot windows
+vertex_history = []  # List to store history of vertex additions for undo functionality
 
 def update(val=None):
     low = low_slider.val
@@ -528,6 +529,8 @@ def continue_to_polygon(event):
 
         # If not dragging, add a new point
         current_points.append((event.xdata, event.ydata))
+        # Store the action in history for undo
+        vertex_history.append(('add', len(current_points) - 1, (event.xdata, event.ydata)))
         # Get the next polygon number
         polygon_num = get_next_polygon_number(output_dir, args)
         # Get the color for this polygon number
@@ -570,7 +573,8 @@ def continue_to_polygon(event):
         current_polygon_num = None
 
     def on_key(event):
-        global drawing_polygon, current_points
+        global drawing_polygon, current_points, vertex_history
+        
         if event.key == 'enter' and current_points:
             # Get the next polygon number
             polygon_num = get_next_polygon_number(output_dir, args)
@@ -598,6 +602,7 @@ def continue_to_polygon(event):
             
             # Clear current points and redraw all polygons
             current_points.clear()
+            vertex_history.clear()  # Clear history when polygon is completed
             redraw_all_polygons()
         elif event.key == 'q':
             # Process any remaining points before quitting
@@ -624,6 +629,7 @@ def continue_to_polygon(event):
                 
                 update_polygon_data(polygon_num, pts_to_process, color)
                 current_points.clear()
+                vertex_history.clear()  # Clear history when polygon is completed
                 redraw_all_polygons()
             print(f"\nTotal polygons processed: {len(all_polygons)}")
             drawing_polygon = False
@@ -631,6 +637,18 @@ def continue_to_polygon(event):
             plt.disconnect(cid_key)
             plt.disconnect(cid_motion)
             plt.disconnect(cid_release)
+        elif event.key == 'cmd+z':  # Check for the combined key event
+            if vertex_history and current_points:
+                # Get the last action from history
+                action, idx, point = vertex_history.pop()
+                if action == 'add':
+                    # Remove the last vertex
+                    current_points.pop()
+                    # Get the next polygon number
+                    polygon_num = get_next_polygon_number(output_dir, args)
+                    # Get the color for this polygon number
+                    color = get_color_for_polygon(polygon_num)
+                    redraw_all_polygons(current_points, color)
 
     # Connect event handlers
     cid_click = fig.canvas.mpl_connect('button_press_event', on_click)
