@@ -585,6 +585,8 @@ def continue_to_polygon(event):
             polygon_points = all_polygons[selected_polygon_num]['points']
             # Add the new vertex
             polygon_points.append((event.xdata, event.ydata))
+            # Store the action in history for undo
+            vertex_history.append(('add_edit', selected_polygon_num, len(polygon_points) - 1, (event.xdata, event.ydata)))
             # Update the polygon data
             all_polygons[selected_polygon_num]['points'] = polygon_points
             # Redraw all polygons
@@ -705,17 +707,26 @@ def continue_to_polygon(event):
             plt.disconnect(cid_motion)
             plt.disconnect(cid_release)
         elif event.key == 'cmd+z':  # Check for the combined key event
-            if vertex_history and current_points:
+            if vertex_history:
                 # Get the last action from history
-                action, idx, point = vertex_history.pop()
-                if action == 'add':
-                    # Remove the last vertex
+                action = vertex_history.pop()
+                if action[0] == 'add':
+                    # Remove the last vertex from current polygon being drawn
                     current_points.pop()
                     # Get the next polygon number
                     polygon_num = get_next_polygon_number(output_dir, args)
                     # Get the color for this polygon number
                     color = get_color_for_polygon(polygon_num)
                     redraw_all_polygons(current_points, color)
+                elif action[0] == 'add_edit':
+                    # Remove the last vertex from the polygon being edited
+                    polygon_num = action[1]
+                    polygon_points = all_polygons[polygon_num]['points']
+                    polygon_points.pop()
+                    # Update the polygon data
+                    all_polygons[polygon_num]['points'] = polygon_points
+                    # Redraw all polygons
+                    redraw_all_polygons()
 
     # Connect event handlers
     cid_click = fig.canvas.mpl_connect('button_press_event', on_click)
@@ -728,11 +739,12 @@ def continue_to_polygon(event):
 def load_polygons(event):
     # Load existing polygon coordinates from CSV files and draw them on the image
     global all_pts, drawing_polygon, final_rgb, all_polygons, spectrum_figs, dragging_vertex, current_polygon, current_polygon_num
-    global cid_click, cid_motion, cid_release, edit_mode, selected_polygon_num
+    global cid_click, cid_motion, cid_release, edit_mode, selected_polygon_num, vertex_history
     
     # Reset edit mode and selected polygon
     edit_mode = False
     selected_polygon_num = None
+    vertex_history = []  # Reset vertex history
     
     # Process the RGB image first
     low = low_slider.val
@@ -910,6 +922,8 @@ def load_polygons(event):
                 polygon_points = all_polygons[selected_polygon_num]['points']
                 # Add the new vertex
                 polygon_points.append((event.xdata, event.ydata))
+                # Store the action in history for undo
+                vertex_history.append(('add_edit', selected_polygon_num, len(polygon_points) - 1, (event.xdata, event.ydata)))
                 # Update the polygon data
                 all_polygons[selected_polygon_num]['points'] = polygon_points
                 # Redraw all polygons
@@ -947,10 +961,30 @@ def load_polygons(event):
             current_polygon = None
             current_polygon_num = None
 
+        def on_key(event):
+            global vertex_history
+            if event.key == 'cmd+z':  # Check for the combined key event
+                if vertex_history:
+                    # Get the last action from history
+                    action = vertex_history.pop()
+                    if action[0] == 'add_edit':
+                        # Remove the last vertex from the polygon being edited
+                        polygon_num = action[1]
+                        polygon_points = all_polygons[polygon_num]['points']
+                        polygon_points.pop()
+                        # Update the polygon data
+                        all_polygons[polygon_num]['points'] = polygon_points
+                        # Redraw all polygons
+                        redraw_all_polygons()
+                        # Update the spectrum
+                        update_polygon_data(polygon_num, polygon_points, all_polygons[polygon_num]['color'])
+                        print(f"\nUndid last vertex addition for Polygon {polygon_num}")
+
         # Connect event handlers
         cid_click = fig.canvas.mpl_connect('button_press_event', on_click)
         cid_motion = fig.canvas.mpl_connect('motion_notify_event', on_motion)
         cid_release = fig.canvas.mpl_connect('button_release_event', on_release)
+        cid_key = fig.canvas.mpl_connect('key_press_event', on_key)
         
         # Create a new figure for the button dialog
         dialog_fig = plt.figure(figsize=(4, 2))
