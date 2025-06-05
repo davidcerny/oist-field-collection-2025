@@ -92,6 +92,16 @@ spectrum_figs = {}  # Dictionary to store spectrum plot windows
 vertex_history = []  # List to store history of vertex additions for undo functionality
 edit_mode = False  # Flag to track if we're in edit mode
 selected_polygon_num = None  # Track which polygon is being edited
+used_colors = []  # List to track used colors for polygons
+current_points = []  # List to store points for the current polygon being drawn
+dragging_vertex = None  # Track which vertex is being dragged
+current_polygon = None  # Track the current polygon being edited
+current_polygon_num = None  # Track the number of the current polygon being edited
+
+# Create a colormap with 10 distinct colors from hsv
+colors = plt.cm.hsv(np.linspace(0, 1, 10))
+# Shuffle the colors for random selection
+np.random.shuffle(colors)
 
 # Setup figure and sliders
 fig, ax = plt.subplots(figsize=(12, 8))
@@ -126,6 +136,44 @@ vis_method = RadioButtons(ax_radio, ['Band Resampling', 'Single Bands (54, 32, 2
 
 # Global for final image
 final_rgb = None
+
+def get_color_for_polygon(polygon_num):
+    """Get the color for a specific polygon number, ensuring consistency."""
+    global used_colors, colors
+    if polygon_num > len(used_colors):
+        # If we haven't used all colors, pick a new one
+        color = colors[(polygon_num - 1) % len(colors)]
+        used_colors.append(color)
+    else:
+        # If we've used this number before, return the existing color
+        color = used_colors[polygon_num - 1]
+    return color
+
+def on_motion(event):
+    global dragging_vertex, current_polygon, current_polygon_num
+    if event.inaxes != ax or not drawing_polygon or dragging_vertex is None:
+        return
+
+    # If we're editing a finalized polygon, require edit mode and correct polygon
+    if current_polygon_num is not None:
+        if not edit_mode:
+            return
+        if current_polygon_num != selected_polygon_num:
+            return
+
+    # Update the vertex position
+    if current_polygon_num is None:
+        # Dragging vertex in current polygon (during creation)
+        current_points[dragging_vertex] = (event.xdata, event.ydata)
+        color = get_color_for_polygon(get_next_polygon_number(output_dir, args))
+        redraw_all_polygons(current_points, color)
+    else:
+        # Dragging vertex in finalized polygon (in edit mode)
+        current_polygon[dragging_vertex] = (event.xdata, event.ydata)
+        color = all_polygons[current_polygon_num]['color']
+        # Update the polygon data
+        all_polygons[current_polygon_num]['points'] = current_polygon.copy()
+        redraw_all_polygons()
 
 def update(val=None):
     low = low_slider.val
@@ -428,8 +476,114 @@ def redraw_all_polygons(current_points=None, current_color=None):
     
     fig.canvas.draw_idle()
 
+def on_key(event):
+    global drawing_polygon, current_points, vertex_history, edit_mode, selected_polygon_num
+    
+    if event.key == 'enter' and current_points:
+        # Get the next polygon number
+        polygon_num = get_next_polygon_number(output_dir, args)
+        # Get the color for this polygon number
+        color = get_color_for_polygon(polygon_num)
+        
+        # Draw the closing edge from last point to first point
+        if len(current_points) > 2:  # Only draw closing edge if we have at least 3 points
+            ax.plot([current_points[-1][0], current_points[0][0]], 
+                   [current_points[-1][1], current_points[0][1]], '-', color=color)
+            fig.canvas.draw_idle()
+        
+        print(f"\nProcessing polygon {polygon_num} with {len(current_points)} points")
+        # Store the current points before clearing
+        pts_to_process = current_points.copy()
+        
+        # Add to all_polygons dictionary
+        all_polygons[polygon_num] = {
+            'points': pts_to_process,
+            'color': color
+        }
+        
+        # Process the stored points and save data
+        update_polygon_data(polygon_num, pts_to_process, color)
+        
+        # Clear current points but preserve history
+        current_points.clear()
+        print(f"History length after completing polygon: {len(vertex_history)}")
+        redraw_all_polygons()
+    elif event.key == 'q':
+        # Process any remaining points before quitting
+        if current_points:
+            # Get the next polygon number
+            polygon_num = get_next_polygon_number(output_dir, args)
+            # Get the color for this polygon number
+            color = get_color_for_polygon(polygon_num)
+            
+            # Draw the closing edge from last point to first point
+            if len(current_points) > 2:  # Only draw closing edge if we have at least 3 points
+                ax.plot([current_points[-1][0], current_points[0][0]], 
+                       [current_points[-1][1], current_points[0][1]], '-', color=color)
+                fig.canvas.draw_idle()
+            
+            print(f"\nProcessing final polygon {polygon_num} with {len(current_points)} points")
+            pts_to_process = current_points.copy()
+            
+            # Add to all_polygons dictionary
+            all_polygons[polygon_num] = {
+                'points': pts_to_process,
+                'color': color
+            }
+            
+            update_polygon_data(polygon_num, pts_to_process, color)
+            current_points.clear()
+            print(f"History length after quitting: {len(vertex_history)}")
+            redraw_all_polygons()
+        print(f"\nTotal polygons processed: {len(all_polygons)}")
+        drawing_polygon = False
+        plt.disconnect(cid_click)
+        plt.disconnect(cid_key)
+        plt.disconnect(cid_motion)
+        plt.disconnect(cid_release)
+    elif event.key == 'cmd+z':  # Check for the combined key event
+        if vertex_history:
+            # Get the last action from history
+            print("Removing a vertex from history: global on_key()")
+            action = vertex_history.pop()
+            print(f"Undoing action: {action[0]}. Remaining history length: {len(vertex_history)}")
+            if action[0] == 'add':
+                # Remove the last vertex from current polygon being drawn
+                if current_points:  # Only pop if we have points
+                    current_points.pop()
+                    # Get the next polygon number
+                    polygon_num = get_next_polygon_number(output_dir, args)
+                    # Get the color for this polygon number
+                    color = get_color_for_polygon(polygon_num)
+                    redraw_all_polygons(current_points, color)
+            elif action[0] == 'add_edit':
+                # Remove the last vertex from the polygon being edited
+                polygon_num = action[1]
+                polygon_points = all_polygons[polygon_num]['points']
+                if polygon_points:  # Only pop if we have points
+                    polygon_points.pop()
+                    # Update the polygon data
+                    all_polygons[polygon_num]['points'] = polygon_points
+                    # Redraw all polygons
+                    redraw_all_polygons()
+                    # Update the spectrum
+                    update_polygon_data(polygon_num, polygon_points, all_polygons[polygon_num]['color'])
+                    print(f"\nUndid last vertex addition for Polygon {polygon_num}")
+
 def continue_to_polygon(event):
     global final_rgb, current_points, drawing_polygon, dragging_vertex, current_polygon, current_polygon_num, all_polygons, spectrum_figs
+    global edit_mode, selected_polygon_num, vertex_history, used_colors, colors, cid_click, cid_key, cid_motion, cid_release
+    
+    # Reset edit mode and selected polygon
+    edit_mode = False
+    selected_polygon_num = None
+    # Only clear history if we're starting fresh (no current points)
+    if not current_points:
+        vertex_history = []
+        print("Starting fresh - cleared vertex history")
+    else:
+        print(f"Continuing with existing history. Current history length: {len(vertex_history)}")
+    
     low = low_slider.val
     high = high_slider.val
     gain = gain_slider.val
@@ -444,7 +598,8 @@ def continue_to_polygon(event):
     fig.canvas.draw_idle()
 
     # Initialize or preserve current points and state
-    current_points = []
+    if not current_points:  # Only initialize if we don't have current points
+        current_points = []
     drawing_polygon = True
     dragging_vertex = None
     current_polygon = None
@@ -456,10 +611,7 @@ def continue_to_polygon(event):
     if spectrum_figs is None:
         spectrum_figs = {}
 
-    # Create a colormap with 10 distinct colors from hsv
-    colors = plt.cm.hsv(np.linspace(0, 1, 10))
-    # Create a list to track used colors, initialized with colors from existing polygons
-    used_colors = []
+    # Initialize used_colors with colors from existing polygons
     if all_polygons:
         # Get the maximum polygon number to determine how many colors are already used
         max_poly_num = max(all_polygons.keys())
@@ -476,17 +628,6 @@ def continue_to_polygon(event):
         colors = np.concatenate([np.array(used_colors), remaining_colors])
     else:
         colors = remaining_colors
-
-    def get_color_for_polygon(polygon_num):
-        # Get the color for a specific polygon number, ensuring consistency
-        if polygon_num > len(used_colors):
-            # If we haven't used all colors, pick a new one
-            color = colors[(polygon_num - 1) % len(colors)]
-            used_colors.append(color)
-        else:
-            # If we've used this number before, return the existing color
-            color = used_colors[polygon_num - 1]
-        return color
 
     def find_nearest_vertex(x, y, threshold=5):
         # Find the nearest vertex within threshold distance across all polygons
@@ -516,46 +657,6 @@ def continue_to_polygon(event):
                 target_polygon_num = poly_num
 
         return nearest, target_polygon, target_polygon_num
-
-    def find_nearest_edge(x, y, polygon_points, threshold=5):
-        """Find the nearest edge and its position in the polygon."""
-        if len(polygon_points) < 2:
-            return None, None
-        
-        min_dist = threshold
-        nearest_edge = None
-        insert_pos = None
-        
-        # Check each edge
-        for i in range(len(polygon_points)):
-            p1 = polygon_points[i]
-            p2 = polygon_points[(i + 1) % len(polygon_points)]
-            
-            # Calculate distance from point to line segment
-            line_vec = np.array(p2) - np.array(p1)
-            point_vec = np.array([x, y]) - np.array(p1)
-            line_len = np.linalg.norm(line_vec)
-            line_unitvec = line_vec / line_len
-            point_proj_len = np.dot(point_vec, line_unitvec)
-            
-            # If projection is outside the line segment, use endpoint distance
-            if point_proj_len < 0:
-                dist = np.linalg.norm(point_vec)
-                proj_point = p1
-            elif point_proj_len > line_len:
-                dist = np.linalg.norm(np.array([x, y]) - np.array(p2))
-                proj_point = p2
-            else:
-                # Calculate perpendicular distance
-                proj_point = np.array(p1) + point_proj_len * line_unitvec
-                dist = np.linalg.norm(np.array([x, y]) - proj_point)
-            
-            if dist < min_dist:
-                min_dist = dist
-                nearest_edge = i
-                insert_pos = i + 1  # Insert after the first point of the edge
-        
-        return nearest_edge, insert_pos
 
     def on_click(event):
         global dragging_vertex, current_polygon, current_polygon_num
@@ -587,6 +688,7 @@ def continue_to_polygon(event):
             polygon_points.append((event.xdata, event.ydata))
             # Store the action in history for undo
             vertex_history.append(('add_edit', selected_polygon_num, len(polygon_points) - 1, (event.xdata, event.ydata)))
+            print(f"Added vertex to edit history. Total history length: {len(vertex_history)}")
             # Update the polygon data
             all_polygons[selected_polygon_num]['points'] = polygon_points
             # Redraw all polygons
@@ -597,37 +699,12 @@ def continue_to_polygon(event):
         current_points.append((event.xdata, event.ydata))
         # Store the action in history for undo
         vertex_history.append(('add', len(current_points) - 1, (event.xdata, event.ydata)))
+        print(f"Added vertex to drawing history. Total history length: {len(vertex_history)}")
         # Get the next polygon number
         polygon_num = get_next_polygon_number(output_dir, args)
         # Get the color for this polygon number
         color = get_color_for_polygon(polygon_num)
         redraw_all_polygons(current_points, color)
-
-    def on_motion(event):
-        global dragging_vertex, current_polygon, current_polygon_num
-        if event.inaxes != ax or not drawing_polygon or dragging_vertex is None:
-            return
-
-        # If we're editing a finalized polygon, require edit mode and correct polygon
-        if current_polygon_num is not None:
-            if not edit_mode:
-                return
-            if current_polygon_num != selected_polygon_num:
-                return
-
-        # Update the vertex position
-        if current_polygon_num is None:
-            # Dragging vertex in current polygon (during creation)
-            current_points[dragging_vertex] = (event.xdata, event.ydata)
-            color = get_color_for_polygon(get_next_polygon_number(output_dir, args))
-            redraw_all_polygons(current_points, color)
-        else:
-            # Dragging vertex in finalized polygon (in edit mode)
-            current_polygon[dragging_vertex] = (event.xdata, event.ydata)
-            color = all_polygons[current_polygon_num]['color']
-            # Update the polygon data
-            all_polygons[current_polygon_num]['points'] = current_polygon.copy()
-            redraw_all_polygons()
 
     def on_release(event):
         global dragging_vertex, current_polygon, current_polygon_num
@@ -636,97 +713,10 @@ def continue_to_polygon(event):
                 # Update the processed polygon data and regenerate spectrum
                 update_polygon_data(current_polygon_num, current_polygon, all_polygons[current_polygon_num]['color'])
                 print(f"\nUpdated polygon {current_polygon_num} and saved changes to CSV files.")
-            
-            dragging_vertex = None
-            current_polygon = None
-            current_polygon_num = None
-
-    def on_key(event):
-        global drawing_polygon, current_points, vertex_history
         
-        if event.key == 'enter' and current_points:
-            # Get the next polygon number
-            polygon_num = get_next_polygon_number(output_dir, args)
-            # Get the color for this polygon number
-            color = get_color_for_polygon(polygon_num)
-            
-            # Draw the closing edge from last point to first point
-            if len(current_points) > 2:  # Only draw closing edge if we have at least 3 points
-                ax.plot([current_points[-1][0], current_points[0][0]], 
-                       [current_points[-1][1], current_points[0][1]], '-', color=color)
-                fig.canvas.draw_idle()
-            
-            print(f"\nProcessing polygon {polygon_num} with {len(current_points)} points")
-            # Store the current points before clearing
-            pts_to_process = current_points.copy()
-            
-            # Add to all_polygons dictionary
-            all_polygons[polygon_num] = {
-                'points': pts_to_process,
-                'color': color
-            }
-            
-            # Process the stored points and save data
-            update_polygon_data(polygon_num, pts_to_process, color)
-            
-            # Clear current points and redraw all polygons
-            current_points.clear()
-            vertex_history.clear()  # Clear history when polygon is completed
-            redraw_all_polygons()
-        elif event.key == 'q':
-            # Process any remaining points before quitting
-            if current_points:
-                # Get the next polygon number
-                polygon_num = get_next_polygon_number(output_dir, args)
-                # Get the color for this polygon number
-                color = get_color_for_polygon(polygon_num)
-                
-                # Draw the closing edge from last point to first point
-                if len(current_points) > 2:  # Only draw closing edge if we have at least 3 points
-                    ax.plot([current_points[-1][0], current_points[0][0]], 
-                           [current_points[-1][1], current_points[0][1]], '-', color=color)
-                    fig.canvas.draw_idle()
-                
-                print(f"\nProcessing final polygon {polygon_num} with {len(current_points)} points")
-                pts_to_process = current_points.copy()
-                
-                # Add to all_polygons dictionary
-                all_polygons[polygon_num] = {
-                    'points': pts_to_process,
-                    'color': color
-                }
-                
-                update_polygon_data(polygon_num, pts_to_process, color)
-                current_points.clear()
-                vertex_history.clear()  # Clear history when polygon is completed
-                redraw_all_polygons()
-            print(f"\nTotal polygons processed: {len(all_polygons)}")
-            drawing_polygon = False
-            plt.disconnect(cid_click)
-            plt.disconnect(cid_key)
-            plt.disconnect(cid_motion)
-            plt.disconnect(cid_release)
-        elif event.key == 'cmd+z':  # Check for the combined key event
-            if vertex_history:
-                # Get the last action from history
-                action = vertex_history.pop()
-                if action[0] == 'add':
-                    # Remove the last vertex from current polygon being drawn
-                    current_points.pop()
-                    # Get the next polygon number
-                    polygon_num = get_next_polygon_number(output_dir, args)
-                    # Get the color for this polygon number
-                    color = get_color_for_polygon(polygon_num)
-                    redraw_all_polygons(current_points, color)
-                elif action[0] == 'add_edit':
-                    # Remove the last vertex from the polygon being edited
-                    polygon_num = action[1]
-                    polygon_points = all_polygons[polygon_num]['points']
-                    polygon_points.pop()
-                    # Update the polygon data
-                    all_polygons[polygon_num]['points'] = polygon_points
-                    # Redraw all polygons
-                    redraw_all_polygons()
+        dragging_vertex = None
+        current_polygon = None
+        current_polygon_num = None
 
     # Connect event handlers
     cid_click = fig.canvas.mpl_connect('button_press_event', on_click)
@@ -739,12 +729,14 @@ def continue_to_polygon(event):
 def load_polygons(event):
     # Load existing polygon coordinates from CSV files and draw them on the image
     global all_pts, drawing_polygon, final_rgb, all_polygons, spectrum_figs, dragging_vertex, current_polygon, current_polygon_num
-    global cid_click, cid_motion, cid_release, edit_mode, selected_polygon_num, vertex_history
+    global cid_click, cid_motion, cid_release, edit_mode, selected_polygon_num, vertex_history, current_points
     
     # Reset edit mode and selected polygon
     edit_mode = False
     selected_polygon_num = None
-    vertex_history = []  # Reset vertex history
+    # Only clear history if we're starting fresh (no current points)
+    if not current_points:
+        vertex_history = []
     
     # Process the RGB image first
     low = low_slider.val
@@ -860,40 +852,6 @@ def load_polygons(event):
 
             return nearest, target_polygon, target_polygon_num
 
-        def redraw_all_polygons():
-            # Redraw all polygons with their vertices and edges
-            # Clear only the lines and points, not the text labels
-            for artist in ax.lines + ax.collections:
-                artist.remove()
-            
-            # Remove existing text labels
-            for artist in ax.texts:
-                artist.remove()
-            
-            # Redraw all processed polygons
-            for poly_num, poly_data in all_polygons.items():
-                points = poly_data['points']
-                color = poly_data['color']
-                # Draw vertices
-                x_coords = [p[0] for p in points]
-                y_coords = [p[1] for p in points]
-                ax.plot(x_coords, y_coords, 'o', color=color)
-                # Draw edges
-                if len(points) > 1:
-                    for i in range(len(points)):
-                        ax.plot([points[i][0], points[(i + 1) % len(points)][0]],
-                               [points[i][1], points[(i + 1) % len(points)][1]], '-', color=color)
-            
-                # Calculate and plot the centroid with the label
-                centroid_x = np.mean(x_coords)
-                centroid_y = np.mean(y_coords)
-                ax.text(centroid_x, centroid_y, str(poly_num), 
-                        color=color, fontsize=12, fontweight='bold',
-                        ha='center', va='center',
-                        bbox=dict(facecolor='none', edgecolor='none', boxstyle='round,pad=0.3'))
-            
-            fig.canvas.draw_idle()
-
         def on_click(event):
             global dragging_vertex, current_polygon, current_polygon_num
             if event.inaxes != ax or not drawing_polygon:
@@ -924,67 +882,30 @@ def load_polygons(event):
                 polygon_points.append((event.xdata, event.ydata))
                 # Store the action in history for undo
                 vertex_history.append(('add_edit', selected_polygon_num, len(polygon_points) - 1, (event.xdata, event.ydata)))
+                print(f"Added vertex to edit history. Total history length: {len(vertex_history)}")
                 # Update the polygon data
                 all_polygons[selected_polygon_num]['points'] = polygon_points
                 # Redraw all polygons
                 redraw_all_polygons()
                 return
 
-        def on_motion(event):
-            global dragging_vertex, current_polygon, current_polygon_num
-            if event.inaxes != ax or not drawing_polygon or dragging_vertex is None:
-                return
-
-            # If we're editing a finalized polygon, require edit mode and correct polygon
-            if current_polygon_num is not None:
-                if not edit_mode:
-                    return
-                if current_polygon_num != selected_polygon_num:
-                    return
-
-            # Update the vertex position
-            current_polygon[dragging_vertex] = (event.xdata, event.ydata)
-            color = all_polygons[current_polygon_num]['color']
-            # Update the polygon data
-            all_polygons[current_polygon_num]['points'] = current_polygon.copy()
-            # Redraw all polygons
-            redraw_all_polygons()
-
         def on_release(event):
             global dragging_vertex, current_polygon, current_polygon_num
-            if dragging_vertex is not None and current_polygon_num is not None:
-                # Update the processed polygon data and regenerate spectrum
-                update_polygon_data(current_polygon_num, current_polygon, all_polygons[current_polygon_num]['color'])
-                print(f"\nUpdated polygon {current_polygon_num} and saved changes to CSV files.")
+            if dragging_vertex is not None:
+                if current_polygon_num is not None:
+                    # Update the processed polygon data and regenerate spectrum
+                    update_polygon_data(current_polygon_num, current_polygon, all_polygons[current_polygon_num]['color'])
+                    print(f"\nUpdated polygon {current_polygon_num} and saved changes to CSV files.")
             
             dragging_vertex = None
             current_polygon = None
             current_polygon_num = None
 
-        def on_key(event):
-            global vertex_history
-            if event.key == 'cmd+z':  # Check for the combined key event
-                if vertex_history:
-                    # Get the last action from history
-                    action = vertex_history.pop()
-                    if action[0] == 'add_edit':
-                        # Remove the last vertex from the polygon being edited
-                        polygon_num = action[1]
-                        polygon_points = all_polygons[polygon_num]['points']
-                        polygon_points.pop()
-                        # Update the polygon data
-                        all_polygons[polygon_num]['points'] = polygon_points
-                        # Redraw all polygons
-                        redraw_all_polygons()
-                        # Update the spectrum
-                        update_polygon_data(polygon_num, polygon_points, all_polygons[polygon_num]['color'])
-                        print(f"\nUndid last vertex addition for Polygon {polygon_num}")
-
         # Connect event handlers
         cid_click = fig.canvas.mpl_connect('button_press_event', on_click)
+        cid_key = fig.canvas.mpl_connect('key_press_event', on_key)
         cid_motion = fig.canvas.mpl_connect('motion_notify_event', on_motion)
         cid_release = fig.canvas.mpl_connect('button_release_event', on_release)
-        cid_key = fig.canvas.mpl_connect('key_press_event', on_key)
         
         # Create a new figure for the button dialog
         dialog_fig = plt.figure(figsize=(4, 2))
