@@ -693,6 +693,9 @@ def continue_to_polygon(event):
             all_polygons[selected_polygon_num]['points'] = polygon_points
             # Redraw all polygons
             redraw_all_polygons()
+            # Update the spectrum immediately after adding the vertex
+            update_polygon_data(selected_polygon_num, polygon_points, all_polygons[selected_polygon_num]['color'])
+            print(f"\nUpdated polygon {selected_polygon_num} and saved changes to CSV files.")
             return
 
         # If not in edit mode and not dragging, add a new point for a new polygon
@@ -887,6 +890,9 @@ def load_polygons(event):
                 all_polygons[selected_polygon_num]['points'] = polygon_points
                 # Redraw all polygons
                 redraw_all_polygons()
+                # Update the spectrum immediately after adding the vertex
+                update_polygon_data(selected_polygon_num, polygon_points, all_polygons[selected_polygon_num]['color'])
+                print(f"\nUpdated polygon {selected_polygon_num} and saved changes to CSV files.")
                 return
 
         def on_release(event):
