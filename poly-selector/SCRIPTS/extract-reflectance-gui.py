@@ -97,6 +97,10 @@ current_points = []  # List to store points for the current polygon being drawn
 dragging_vertex = None  # Track which vertex is being dragged
 current_polygon = None  # Track the current polygon being edited
 current_polygon_num = None  # Track the number of the current polygon being edited
+cid_click = None  # Connection ID for click events
+cid_key = None  # Connection ID for key events
+cid_motion = None  # Connection ID for motion events
+cid_release = None  # Connection ID for release events
 
 # Create a colormap with 10 distinct colors from hsv
 colors = plt.cm.hsv(np.linspace(0, 1, 10))
@@ -478,6 +482,7 @@ def redraw_all_polygons(current_points=None, current_color=None):
 
 def on_key(event):
     global drawing_polygon, current_points, vertex_history, edit_mode, selected_polygon_num
+    global cid_click, cid_key, cid_motion, cid_release
     
     if event.key == 'enter' and current_points:
         # Get the next polygon number
@@ -537,10 +542,15 @@ def on_key(event):
             redraw_all_polygons()
         print(f"\nTotal polygons processed: {len(all_polygons)}")
         drawing_polygon = False
-        plt.disconnect(cid_click)
-        plt.disconnect(cid_key)
-        plt.disconnect(cid_motion)
-        plt.disconnect(cid_release)
+        # Only disconnect if the connection IDs exist
+        if cid_click is not None:
+            plt.disconnect(cid_click)
+        if cid_key is not None:
+            plt.disconnect(cid_key)
+        if cid_motion is not None:
+            plt.disconnect(cid_motion)
+        if cid_release is not None:
+            plt.disconnect(cid_release)
     elif event.key == 'cmd+z':  # Check for the combined key event
         if vertex_history:
             # Get the last action from history
