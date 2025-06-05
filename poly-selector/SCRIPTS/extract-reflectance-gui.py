@@ -943,6 +943,27 @@ def load_polygons(event):
 def toggle_edit_mode(event):
     global edit_mode, selected_polygon_num
     if not edit_mode:  # Only show dialog when entering edit mode
+        if not all_polygons:
+            # Create a new figure for the error message
+            dialog_fig = plt.figure(figsize=(3, 2))
+            dialog_ax = dialog_fig.add_subplot(111)
+            dialog_ax.text(0.5, 0.7, "No polygons available to edit.",
+                          ha='center', va='center', transform=dialog_ax.transAxes)
+            dialog_ax.text(0.5, 0.5, "Please draw or load polygons first.",
+                          ha='center', va='center', transform=dialog_ax.transAxes)
+            dialog_ax.set_axis_off()
+            
+            # Create OK button
+            ax_ok = plt.axes([0.4, 0.2, 0.2, 0.2])
+            ok_button = Button(ax_ok, 'OK')
+            
+            def on_ok(event):
+                plt.close(dialog_fig)
+            
+            ok_button.on_clicked(on_ok)
+            plt.show(block=True)
+            return
+
         # Create a new figure for the dialog
         dialog_fig = plt.figure(figsize=(3, 4))
         dialog_ax = dialog_fig.add_subplot(111)
