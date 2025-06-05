@@ -544,9 +544,7 @@ def on_key(event):
     elif event.key == 'cmd+z':  # Check for the combined key event
         if vertex_history:
             # Get the last action from history
-            print("Removing a vertex from history: global on_key()")
             action = vertex_history.pop()
-            print(f"Undoing action: {action[0]}. Remaining history length: {len(vertex_history)}")
             if action[0] == 'add':
                 # Remove the last vertex from current polygon being drawn
                 if current_points:  # Only pop if we have points
@@ -568,7 +566,6 @@ def on_key(event):
                     redraw_all_polygons()
                     # Update the spectrum
                     update_polygon_data(polygon_num, polygon_points, all_polygons[polygon_num]['color'])
-                    print(f"\nUndid last vertex addition for Polygon {polygon_num}")
 
 def continue_to_polygon(event):
     global final_rgb, current_points, drawing_polygon, dragging_vertex, current_polygon, current_polygon_num, all_polygons, spectrum_figs
@@ -580,9 +577,6 @@ def continue_to_polygon(event):
     # Only clear history if we're starting fresh (no current points)
     if not current_points:
         vertex_history = []
-        print("Starting fresh - cleared vertex history")
-    else:
-        print(f"Continuing with existing history. Current history length: {len(vertex_history)}")
     
     low = low_slider.val
     high = high_slider.val
@@ -688,7 +682,6 @@ def continue_to_polygon(event):
             polygon_points.append((event.xdata, event.ydata))
             # Store the action in history for undo
             vertex_history.append(('add_edit', selected_polygon_num, len(polygon_points) - 1, (event.xdata, event.ydata)))
-            print(f"Added vertex to edit history. Total history length: {len(vertex_history)}")
             # Update the polygon data
             all_polygons[selected_polygon_num]['points'] = polygon_points
             # Redraw all polygons
@@ -885,7 +878,6 @@ def load_polygons(event):
                 polygon_points.append((event.xdata, event.ydata))
                 # Store the action in history for undo
                 vertex_history.append(('add_edit', selected_polygon_num, len(polygon_points) - 1, (event.xdata, event.ydata)))
-                print(f"Added vertex to edit history. Total history length: {len(vertex_history)}")
                 # Update the polygon data
                 all_polygons[selected_polygon_num]['points'] = polygon_points
                 # Redraw all polygons
