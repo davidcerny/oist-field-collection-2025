@@ -511,35 +511,13 @@ def on_key(event):
         
         # Clear current points but preserve history
         current_points.clear()
-        print(f"History length after completing polygon: {len(vertex_history)}")
         redraw_all_polygons()
     elif event.key == 'q':
-        # Process any remaining points before quitting
+        # Just clear any unfinalized points without processing them
         if current_points:
-            # Get the next polygon number
-            polygon_num = get_next_polygon_number(output_dir, args)
-            # Get the color for this polygon number
-            color = get_color_for_polygon(polygon_num)
-            
-            # Draw the closing edge from last point to first point
-            if len(current_points) > 2:  # Only draw closing edge if we have at least 3 points
-                ax.plot([current_points[-1][0], current_points[0][0]], 
-                       [current_points[-1][1], current_points[0][1]], '-', color=color)
-                fig.canvas.draw_idle()
-            
-            print(f"\nProcessing final polygon {polygon_num} with {len(current_points)} points")
-            pts_to_process = current_points.copy()
-            
-            # Add to all_polygons dictionary
-            all_polygons[polygon_num] = {
-                'points': pts_to_process,
-                'color': color
-            }
-            
-            update_polygon_data(polygon_num, pts_to_process, color)
             current_points.clear()
-            print(f"History length after quitting: {len(vertex_history)}")
             redraw_all_polygons()
+        
         print(f"\nTotal polygons processed: {len(all_polygons)}")
         drawing_polygon = False
         # Only disconnect if the connection IDs exist
@@ -705,7 +683,6 @@ def continue_to_polygon(event):
         current_points.append((event.xdata, event.ydata))
         # Store the action in history for undo
         vertex_history.append(('add', len(current_points) - 1, (event.xdata, event.ydata)))
-        print(f"Added vertex to drawing history. Total history length: {len(vertex_history)}")
         # Get the next polygon number
         polygon_num = get_next_polygon_number(output_dir, args)
         # Get the color for this polygon number
