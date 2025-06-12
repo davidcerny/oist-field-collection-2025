@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button, RadioButtons
 from spectral import envi, get_rgb
 from skimage.draw import polygon
+from skimage import measure, filters, morphology
 import os
 from matplotlib.colors import to_rgba
 import argparse
@@ -122,12 +123,17 @@ ax_high = plt.axes([0.07, 0.48, 0.2, 0.03])
 ax_gain = plt.axes([0.07, 0.43, 0.2, 0.03])
 ax_offset = plt.axes([0.07, 0.38, 0.2, 0.03])
 
+# Add threshold slider after the other sliders
+ax_thresh = plt.axes([0.07, 0.33, 0.2, 0.03])  # Position below offset slider
+thresh_slider = Slider(ax_thresh, 'Threshold', 0, 1, valinit=0.5)
+
 # Buttons at the bottom
 ax_reset = plt.axes([0.02, 0.25, 0.25, 0.04])
 ax_save = plt.axes([0.02, 0.2, 0.25, 0.04])
 ax_continue = plt.axes([0.02, 0.15, 0.25, 0.04])
 ax_load = plt.axes([0.02, 0.1, 0.25, 0.04])
 ax_edit = plt.axes([0.02, 0.05, 0.25, 0.04])  # New Edit Polygon button
+ax_auto = plt.axes([0.02, 0.0, 0.25, 0.04])   # New Extract Specimen button
 
 # Sliders
 low_slider = Slider(ax_low, 'Low %', 0, 10, valinit=1)
@@ -195,6 +201,7 @@ def reset(event):
     high_slider.reset()
     gain_slider.reset()
     offset_slider.reset()
+    thresh_slider.reset()
 
 def save_rgb(event):
     update()
@@ -484,7 +491,7 @@ def on_key(event):
     global drawing_polygon, current_points, vertex_history, edit_mode, selected_polygon_num
     global cid_click, cid_key, cid_motion, cid_release
     
-    if event.key == 'enter' and current_points:
+    if (event.key == 'enter' or event.key == 'return') and current_points:
         # Get the next polygon number
         polygon_num = get_next_polygon_number(output_dir, args)
         # Get the color for this polygon number
@@ -985,6 +992,80 @@ def toggle_edit_mode(event):
         edit_button.label.set_text('Edit Polygon')
         fig.canvas.draw_idle()
 
+def auto_segment_specimen(event):
+    # Automatically segment the specimen from the background using image processing
+    global all_polygons, spectrum_figs, drawing_polygon, current_points
+    
+    # Get the current RGB image
+    low = low_slider.val
+    high = high_slider.val
+    gain = gain_slider.val
+    offset = offset_slider.val
+    p_low, p_high = np.percentile(rgb_raw, (low, high))
+    current_rgb = np.clip((rgb_raw - p_low) / (p_high - p_low), 0, 1)
+    current_rgb = np.clip(gain * current_rgb + offset, 0, 1)
+    
+    # Convert to grayscale
+    gray = np.mean(current_rgb, axis=2)
+    
+    # Apply thresholding with manual threshold
+    thresh = thresh_slider.val
+    binary = gray > thresh
+    
+    # Clean up the binary image
+    binary = morphology.remove_small_objects(binary, min_size=100)
+    binary = morphology.remove_small_holes(binary, area_threshold=100)
+    
+    # Find contours
+    contours = measure.find_contours(binary, 0.5)
+    
+    if not contours:
+        # Create a new figure for the error message
+        dialog_fig = plt.figure(figsize=(3, 2))
+        dialog_ax = dialog_fig.add_subplot(111)
+        dialog_ax.text(0.5, 0.6, "Could not detect specimen.",
+                      ha='center', va='center', transform=dialog_ax.transAxes)
+        dialog_ax.text(0.5, 0.4, "Try adjusting the threshold.",
+                      ha='center', va='center', transform=dialog_ax.transAxes)
+        dialog_ax.set_axis_off()
+        
+        # Create OK button
+        ax_ok = plt.axes([0.4, 0.2, 0.2, 0.2])
+        ok_button = Button(ax_ok, 'OK')
+        
+        def on_ok(event):
+            plt.close(dialog_fig)
+        
+        ok_button.on_clicked(on_ok)
+        plt.show(block=True)
+        return
+    
+    # Get the largest contour (assuming it's the specimen)
+    largest_contour = max(contours, key=len)
+    
+    # Simplify the contour to reduce the number of points
+    simplified_contour = measure.approximate_polygon(largest_contour, tolerance=2.0)
+    
+    # Convert contour points to the correct format (x, y)
+    points = [(p[1], p[0]) for p in simplified_contour]  # Swap x and y
+    
+    # Get the next polygon number
+    polygon_num = get_next_polygon_number(output_dir, args)
+    # Get the color for this polygon number
+    color = get_color_for_polygon(polygon_num)
+    
+    # Store points in current_points instead of all_polygons
+    current_points = points
+    
+    # Set drawing_polygon to True so Enter key will work
+    drawing_polygon = True
+    
+    # Draw the preview
+    redraw_all_polygons(current_points, color)
+    
+    print(f"\nPreview of segmented specimen. Press Enter to confirm or adjust threshold and try again.")
+    print("The polygon will only be saved after pressing Enter.")
+
 # Connect widgets
 low_slider.on_changed(update)
 high_slider.on_changed(update)
@@ -1000,8 +1081,17 @@ load_button = Button(ax_load, 'Load Polygon Data')
 load_button.on_clicked(load_polygons)
 edit_button = Button(ax_edit, 'Edit Polygon')
 edit_button.on_clicked(toggle_edit_mode)
+auto_button = Button(ax_auto, 'Extract Specimen')
+auto_button.on_clicked(auto_segment_specimen)
 
 # Connect the radio buttons
 vis_method.on_clicked(change_vis_method)
+
+# Connect the threshold slider
+thresh_slider.on_changed(update)
+
+# Connect the key event handler at startup. Apparently, without this, we will not be able
+# to use Enter/Return to save the results of the auto-segmentation process.
+cid_key = fig.canvas.mpl_connect('key_press_event', on_key)
 
 plt.show()
