@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button, RadioButtons
 from spectral import envi, get_rgb
 from skimage.draw import polygon
+from skimage import measure, filters, morphology
 import os
 from matplotlib.colors import to_rgba
 import argparse
@@ -101,6 +102,7 @@ cid_click = None  # Connection ID for click events
 cid_key = None  # Connection ID for key events
 cid_motion = None  # Connection ID for motion events
 cid_release = None  # Connection ID for release events
+drawing_polygon = False  # Flag to track if we're currently drawing a polygon
 
 # Create a colormap with 10 distinct colors from hsv
 colors = plt.cm.hsv(np.linspace(0, 1, 10))
@@ -117,17 +119,18 @@ ax.set_title("Adjust sliders, then click 'Continue to Polygon'")
 ax_radio = plt.axes([0.02, 0.66, 0.25, 0.25], frameon=True)  # Radio buttons at the top
 
 # Sliders below radio buttons - made shorter to fit labels
-ax_low = plt.axes([0.07, 0.53, 0.2, 0.03])
-ax_high = plt.axes([0.07, 0.48, 0.2, 0.03])
-ax_gain = plt.axes([0.07, 0.43, 0.2, 0.03])
-ax_offset = plt.axes([0.07, 0.38, 0.2, 0.03])
+ax_low = plt.axes([0.07, 0.56, 0.2, 0.03])
+ax_high = plt.axes([0.07, 0.51, 0.2, 0.03])
+ax_gain = plt.axes([0.07, 0.46, 0.2, 0.03])
+ax_offset = plt.axes([0.07, 0.41, 0.2, 0.03])
 
 # Buttons at the bottom
-ax_reset = plt.axes([0.02, 0.25, 0.25, 0.04])
-ax_save = plt.axes([0.02, 0.2, 0.25, 0.04])
-ax_continue = plt.axes([0.02, 0.15, 0.25, 0.04])
-ax_load = plt.axes([0.02, 0.1, 0.25, 0.04])
-ax_edit = plt.axes([0.02, 0.05, 0.25, 0.04])  # New Edit Polygon button
+ax_reset = plt.axes([0.02, 0.31, 0.25, 0.04])
+ax_save = plt.axes([0.02, 0.26, 0.25, 0.04])
+ax_continue = plt.axes([0.02, 0.21, 0.25, 0.04])
+ax_load = plt.axes([0.02, 0.16, 0.25, 0.04])
+ax_edit = plt.axes([0.02, 0.11, 0.25, 0.04])
+ax_auto = plt.axes([0.02, 0.06, 0.25, 0.04])
 
 # Sliders
 low_slider = Slider(ax_low, 'Low %', 0, 10, valinit=1)
@@ -152,6 +155,84 @@ def get_color_for_polygon(polygon_num):
         # If we've used this number before, return the existing color
         color = used_colors[polygon_num - 1]
     return color
+
+def find_nearest_vertex(x, y, threshold=5):
+    # Find the nearest vertex within threshold distance across all polygons
+    nearest = None
+    min_dist = threshold
+    target_polygon = None
+    target_polygon_num = None
+
+    # Check current points first
+    if current_points:
+        distances = [(i, np.sqrt((p[0] - x)**2 + (p[1] - y)**2)) for i, p in enumerate(current_points)]
+        idx, dist = min(distances, key=lambda x: x[1])
+        if dist < min_dist:
+            min_dist = dist
+            nearest = idx
+            target_polygon = current_points
+
+    # Then check all processed polygons
+    for poly_num, poly_data in all_polygons.items():
+        points = poly_data['points']
+        distances = [(i, np.sqrt((p[0] - x)**2 + (p[1] - y)**2)) for i, p in enumerate(points)]
+        idx, dist = min(distances, key=lambda x: x[1])
+        if dist < min_dist:
+            min_dist = dist
+            nearest = idx
+            target_polygon = points
+            target_polygon_num = poly_num
+
+    return nearest, target_polygon, target_polygon_num
+
+def on_click(event):
+    global dragging_vertex, current_polygon, current_polygon_num
+    if event.inaxes != ax or not drawing_polygon:
+        return
+
+    # Check if we're clicking near any vertex
+    vertex_idx, target_polygon, target_polygon_num = find_nearest_vertex(event.xdata, event.ydata)
+    if vertex_idx is not None:
+        # If we're editing a finalized polygon, require edit mode and correct polygon
+        if target_polygon_num is not None:
+            if not edit_mode:
+                print("Enter edit mode to modify finalized polygons")
+                return
+            if target_polygon_num != selected_polygon_num:
+                print(f"Currently editing Polygon {selected_polygon_num}. Please select the correct polygon.")
+                return
+        # Otherwise allow dragging (either during creation or in edit mode)
+        dragging_vertex = vertex_idx
+        current_polygon = target_polygon
+        current_polygon_num = target_polygon_num
+        return
+
+    # If we're in edit mode, all clicks should add vertices to the current polygon
+    if edit_mode and selected_polygon_num is not None:
+        # Get the current polygon points
+        polygon_points = all_polygons[selected_polygon_num]['points']
+        # Add the new vertex
+        polygon_points.append((event.xdata, event.ydata))
+        # Store the action in history for undo
+        vertex_history.append(('add_edit', selected_polygon_num, len(polygon_points) - 1, (event.xdata, event.ydata)))
+        # Update the polygon data
+        all_polygons[selected_polygon_num]['points'] = polygon_points
+        # Redraw all polygons
+        redraw_all_polygons()
+        # Update the spectrum immediately after adding the vertex
+        update_polygon_data(selected_polygon_num, polygon_points, all_polygons[selected_polygon_num]['color'])
+        print(f"\nUpdated polygon {selected_polygon_num} and saved changes to CSV files.")
+        return
+
+    # If not in edit mode and not dragging, add a new point for a new polygon
+    current_points.append((event.xdata, event.ydata))
+    # Store the action in history for undo
+    vertex_history.append(('add', len(current_points) - 1, (event.xdata, event.ydata)))
+    # Get the next polygon number
+    polygon_num = get_next_polygon_number(output_dir, args)
+    # Get the color for this polygon number
+    color = get_color_for_polygon(polygon_num)
+    redraw_all_polygons(current_points, color)
 
 def on_motion(event):
     global dragging_vertex, current_polygon, current_polygon_num
@@ -178,6 +259,18 @@ def on_motion(event):
         # Update the polygon data
         all_polygons[current_polygon_num]['points'] = current_polygon.copy()
         redraw_all_polygons()
+
+def on_release(event):
+    global dragging_vertex, current_polygon, current_polygon_num
+    if dragging_vertex is not None:
+        if current_polygon_num is not None:
+            # Update the processed polygon data and regenerate spectrum
+            update_polygon_data(current_polygon_num, current_polygon, all_polygons[current_polygon_num]['color'])
+            print(f"\nUpdated polygon {current_polygon_num} and saved changes to CSV files.")
+    
+    dragging_vertex = None
+    current_polygon = None
+    current_polygon_num = None
 
 def update(val=None):
     low = low_slider.val
@@ -243,7 +336,7 @@ def process_polygon(pts, polygon_num, ax, cube, output_dir, args, used_colors, c
     # Draw the closing edge if we have at least 3 points
     if len(pts) > 2:
         ax.plot([c[-1], c[0]], [r[-1], r[0]], '-', linewidth=2, color=color)
-    
+        
         # Calculate and plot the centroid with the label
         centroid_x = np.mean(c)
         centroid_y = np.mean(r)
@@ -273,10 +366,10 @@ def process_polygon(pts, polygon_num, ax, cube, output_dir, args, used_colors, c
         subsample = spectra
         subsample_coords = coords
 
-    avg_spectrum = spectra.mean(axis=0)
-    std_spectrum = spectra.std(axis=0)
+        avg_spectrum = spectra.mean(axis=0)
+        std_spectrum = spectra.std(axis=0)
 
-    wavelengths = np.linspace(350, 1000, cube.shape[2])
+        wavelengths = np.linspace(350, 1000, cube.shape[2])
     
     if show_spectrum:
         # Create a new figure for this polygon's spectrum
@@ -484,7 +577,7 @@ def on_key(event):
     global drawing_polygon, current_points, vertex_history, edit_mode, selected_polygon_num
     global cid_click, cid_key, cid_motion, cid_release
     
-    if event.key == 'enter' and current_points:
+    if (event.key == 'enter' or event.key == 'return') and current_points:
         # Get the next polygon number
         polygon_num = get_next_polygon_number(output_dir, args)
         # Get the color for this polygon number
@@ -611,96 +704,6 @@ def continue_to_polygon(event):
     else:
         colors = remaining_colors
 
-    def find_nearest_vertex(x, y, threshold=5):
-        # Find the nearest vertex within threshold distance across all polygons
-        nearest = None
-        min_dist = threshold
-        target_polygon = None
-        target_polygon_num = None
-
-        # Check current points first
-        if current_points:
-            distances = [(i, np.sqrt((p[0] - x)**2 + (p[1] - y)**2)) for i, p in enumerate(current_points)]
-            idx, dist = min(distances, key=lambda x: x[1])
-            if dist < min_dist:
-                min_dist = dist
-                nearest = idx
-                target_polygon = current_points
-
-        # Then check all processed polygons
-        for poly_num, poly_data in all_polygons.items():
-            points = poly_data['points']
-            distances = [(i, np.sqrt((p[0] - x)**2 + (p[1] - y)**2)) for i, p in enumerate(points)]
-            idx, dist = min(distances, key=lambda x: x[1])
-            if dist < min_dist:
-                min_dist = dist
-                nearest = idx
-                target_polygon = points
-                target_polygon_num = poly_num
-
-        return nearest, target_polygon, target_polygon_num
-
-    def on_click(event):
-        global dragging_vertex, current_polygon, current_polygon_num
-        if event.inaxes != ax or not drawing_polygon:
-            return
-
-        # Check if we're clicking near any vertex
-        vertex_idx, target_polygon, target_polygon_num = find_nearest_vertex(event.xdata, event.ydata)
-        if vertex_idx is not None:
-            # If we're editing a finalized polygon, require edit mode and correct polygon
-            if target_polygon_num is not None:
-                if not edit_mode:
-                    print("Enter edit mode to modify finalized polygons")
-                    return
-                if target_polygon_num != selected_polygon_num:
-                    print(f"Currently editing Polygon {selected_polygon_num}. Please select the correct polygon.")
-                    return
-            # Otherwise allow dragging (either during creation or in edit mode)
-            dragging_vertex = vertex_idx
-            current_polygon = target_polygon
-            current_polygon_num = target_polygon_num
-            return
-
-        # If we're in edit mode, all clicks should add vertices to the current polygon
-        if edit_mode and selected_polygon_num is not None:
-            # Get the current polygon points
-            polygon_points = all_polygons[selected_polygon_num]['points']
-            # Add the new vertex
-            polygon_points.append((event.xdata, event.ydata))
-            # Store the action in history for undo
-            vertex_history.append(('add_edit', selected_polygon_num, len(polygon_points) - 1, (event.xdata, event.ydata)))
-            # Update the polygon data
-            all_polygons[selected_polygon_num]['points'] = polygon_points
-            # Redraw all polygons
-            redraw_all_polygons()
-            # Update the spectrum immediately after adding the vertex
-            update_polygon_data(selected_polygon_num, polygon_points, all_polygons[selected_polygon_num]['color'])
-            print(f"\nUpdated polygon {selected_polygon_num} and saved changes to CSV files.")
-            return
-
-        # If not in edit mode and not dragging, add a new point for a new polygon
-        current_points.append((event.xdata, event.ydata))
-        # Store the action in history for undo
-        vertex_history.append(('add', len(current_points) - 1, (event.xdata, event.ydata)))
-        # Get the next polygon number
-        polygon_num = get_next_polygon_number(output_dir, args)
-        # Get the color for this polygon number
-        color = get_color_for_polygon(polygon_num)
-        redraw_all_polygons(current_points, color)
-
-    def on_release(event):
-        global dragging_vertex, current_polygon, current_polygon_num
-        if dragging_vertex is not None:
-            if current_polygon_num is not None:
-                # Update the processed polygon data and regenerate spectrum
-                update_polygon_data(current_polygon_num, current_polygon, all_polygons[current_polygon_num]['color'])
-                print(f"\nUpdated polygon {current_polygon_num} and saved changes to CSV files.")
-        
-        dragging_vertex = None
-        current_polygon = None
-        current_polygon_num = None
-
     # Connect event handlers
     cid_click = fig.canvas.mpl_connect('button_press_event', on_click)
     cid_key = fig.canvas.mpl_connect('key_press_event', on_key)
@@ -822,7 +825,16 @@ def load_polygons(event):
             target_polygon = None
             target_polygon_num = None
 
-            # Check all processed polygons
+            # Check current points first
+            if current_points:
+                distances = [(i, np.sqrt((p[0] - x)**2 + (p[1] - y)**2)) for i, p in enumerate(current_points)]
+                idx, dist = min(distances, key=lambda x: x[1])
+                if dist < min_dist:
+                    min_dist = dist
+                    nearest = idx
+                    target_polygon = current_points
+
+            # Then check all processed polygons
             for poly_num, poly_data in all_polygons.items():
                 points = poly_data['points']
                 distances = [(i, np.sqrt((p[0] - x)**2 + (p[1] - y)**2)) for i, p in enumerate(points)]
@@ -926,7 +938,7 @@ def load_polygons(event):
         print("\nNo existing polygon files found.")
 
 def toggle_edit_mode(event):
-    global edit_mode, selected_polygon_num
+    global edit_mode, selected_polygon_num, cid_click, cid_motion, cid_release, drawing_polygon
     if not edit_mode:  # Only show dialog when entering edit mode
         if not all_polygons:
             # Create a new figure for the error message
@@ -965,13 +977,35 @@ def toggle_edit_mode(event):
             polygon_buttons.append((button, num))
         
         def on_polygon_select(polygon_num):
-            global edit_mode, selected_polygon_num
+            global edit_mode, selected_polygon_num, cid_click, cid_motion, cid_release, drawing_polygon
             plt.close(dialog_fig)
             edit_mode = True
             selected_polygon_num = polygon_num
+            drawing_polygon = True  # Enable drawing mode for editing
+            
+            # Disconnect existing event handlers
+            if cid_click is not None:
+                plt.disconnect(cid_click)
+            if cid_motion is not None:
+                plt.disconnect(cid_motion)
+            if cid_release is not None:
+                plt.disconnect(cid_release)
+            
+            # Reconnect event handlers
+            cid_click = fig.canvas.mpl_connect('button_press_event', on_click)
+            cid_motion = fig.canvas.mpl_connect('motion_notify_event', on_motion)
+            cid_release = fig.canvas.mpl_connect('button_release_event', on_release)
+            
             ax.set_title(f"Edit Mode: Editing Polygon {polygon_num}")
             edit_button.label.set_text('Exit Edit Mode')
             fig.canvas.draw_idle()
+            
+            # Print debug information
+            print(f"\nEntered edit mode for Polygon {polygon_num}")
+            print("Event handlers connected:")
+            print(f"Click handler: {cid_click}")
+            print(f"Motion handler: {cid_motion}")
+            print(f"Release handler: {cid_release}")
         
         # Connect each button to its handler
         for button, num in polygon_buttons:
@@ -981,9 +1015,151 @@ def toggle_edit_mode(event):
     else:  # Exiting edit mode
         edit_mode = False
         selected_polygon_num = None
+        drawing_polygon = False  # Disable drawing mode
+        
+        # Disconnect event handlers
+        if cid_click is not None:
+            plt.disconnect(cid_click)
+        if cid_motion is not None:
+            plt.disconnect(cid_motion)
+        if cid_release is not None:
+            plt.disconnect(cid_release)
+        
+        # Reconnect event handlers for normal mode
+        cid_click = fig.canvas.mpl_connect('button_press_event', on_click)
+        cid_motion = fig.canvas.mpl_connect('motion_notify_event', on_motion)
+        cid_release = fig.canvas.mpl_connect('button_release_event', on_release)
+        
         ax.set_title("Draw polygons (Click to add points, press Enter to finish polygon, 'q' to quit)")
         edit_button.label.set_text('Edit Polygon')
         fig.canvas.draw_idle()
+        
+        print("\nExited edit mode")
+        print("Event handlers reconnected for normal mode")
+
+def auto_segment_specimen(event):
+    # Automatically segment the specimen from the background using image processing
+    global all_polygons, spectrum_figs, drawing_polygon, current_points
+    global cid_key, cid_click, cid_motion, cid_release
+    
+    # Create a new figure for the threshold dialog
+    dialog_fig = plt.figure(figsize=(4, 2))
+    dialog_ax = dialog_fig.add_subplot(111)
+    dialog_ax.text(0.5, 0.8, "Adjust threshold to segment specimen:",
+                  ha='center', va='center', transform=dialog_ax.transAxes)
+    dialog_ax.text(0.5, 0.6, "Press Enter when satisfied with the segmentation",
+                  ha='center', va='center', transform=dialog_ax.transAxes)
+    dialog_ax.set_axis_off()
+    
+    # Create threshold slider in the dialog
+    ax_thresh = plt.axes([0.2, 0.3, 0.6, 0.2])
+    thresh_slider = Slider(ax_thresh, 'Threshold', 0, 1, valinit=0.5)
+    
+    def update_preview(val):
+        global drawing_polygon, current_points
+        # Get the current RGB image
+        low = low_slider.val
+        high = high_slider.val
+        gain = gain_slider.val
+        offset = offset_slider.val
+        p_low, p_high = np.percentile(rgb_raw, (low, high))
+        current_rgb = np.clip((rgb_raw - p_low) / (p_high - p_low), 0, 1)
+        current_rgb = np.clip(gain * current_rgb + offset, 0, 1)
+        
+        # Convert to grayscale
+        gray = np.mean(current_rgb, axis=2)
+        
+        # Apply thresholding with manual threshold
+        thresh = thresh_slider.val
+        binary = gray > thresh
+        
+        # Clean up the binary image
+        binary = morphology.remove_small_objects(binary, min_size=100)
+        binary = morphology.remove_small_holes(binary, area_threshold=100)
+        
+        # Find contours
+        contours = measure.find_contours(binary, 0.5)
+        
+        if not contours:
+            return
+        
+        # Get the largest contour (assuming it's the specimen)
+        largest_contour = max(contours, key=len)
+        
+        # Simplify the contour to reduce the number of points
+        simplified_contour = measure.approximate_polygon(largest_contour, tolerance=2.0)
+        
+        # Convert contour points to the correct format (x, y)
+        points = [(p[1], p[0]) for p in simplified_contour]  # Swap x and y
+        
+        # Get the next polygon number
+        polygon_num = get_next_polygon_number(output_dir, args)
+        # Get the color for this polygon number
+        color = get_color_for_polygon(polygon_num)
+        
+        # Store points in current_points instead of all_polygons
+        current_points = points.copy()  # Make sure we have a copy
+        drawing_polygon = True
+        
+        # Draw the preview
+        redraw_all_polygons(current_points, color)
+    
+    def on_key(event):
+        global drawing_polygon, current_points, cid_click, cid_motion, cid_release
+        if event.key == 'enter' or event.key == 'return':
+            # Store points before closing dialog
+            pts_to_process = current_points.copy() if current_points else []
+            
+            # Close the dialog
+            plt.close(dialog_fig)
+            
+            # Process the polygon
+            if pts_to_process:
+                # Get the next polygon number
+                polygon_num = get_next_polygon_number(output_dir, args)
+                # Get the color for this polygon number
+                color = get_color_for_polygon(polygon_num)
+                
+                # Add to all_polygons dictionary
+                all_polygons[polygon_num] = {
+                    'points': pts_to_process,
+                    'color': color
+                }
+                
+                # Process the stored points and save data
+                update_polygon_data(polygon_num, pts_to_process, color)
+                
+                # Clear current points
+                current_points.clear()
+                drawing_polygon = False
+                redraw_all_polygons()
+                
+                print(f"\nProcessed polygon {polygon_num} with {len(pts_to_process)} points")
+                
+                # Ensure event handlers are connected for editing
+                if cid_click is not None:
+                    plt.disconnect(cid_click)
+                if cid_motion is not None:
+                    plt.disconnect(cid_motion)
+                if cid_release is not None:
+                    plt.disconnect(cid_release)
+                
+                # Reconnect event handlers
+                cid_click = fig.canvas.mpl_connect('button_press_event', on_click)
+                cid_motion = fig.canvas.mpl_connect('motion_notify_event', on_motion)
+                cid_release = fig.canvas.mpl_connect('button_release_event', on_release)
+    
+    # Connect the slider to update the preview
+    thresh_slider.on_changed(update_preview)
+    
+    # Connect key event handler to the dialog
+    dialog_fig.canvas.mpl_connect('key_press_event', on_key)
+    
+    # Show initial preview
+    update_preview(0.5)
+    
+    # Show dialog without blocking
+    plt.show(block=False)
 
 # Connect widgets
 low_slider.on_changed(update)
@@ -1000,8 +1176,14 @@ load_button = Button(ax_load, 'Load Polygon Data')
 load_button.on_clicked(load_polygons)
 edit_button = Button(ax_edit, 'Edit Polygon')
 edit_button.on_clicked(toggle_edit_mode)
+auto_button = Button(ax_auto, 'Extract Specimen')
+auto_button.on_clicked(auto_segment_specimen)
 
 # Connect the radio buttons
 vis_method.on_clicked(change_vis_method)
+
+# Connect the key event handler at startup. Apparently, without this, we will not be able
+# to use Enter/Return to save the results of the auto-segmentation process.
+cid_key = fig.canvas.mpl_connect('key_press_event', on_key)
 
 plt.show()
