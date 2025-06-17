@@ -102,6 +102,7 @@ cid_click = None  # Connection ID for click events
 cid_key = None  # Connection ID for key events
 cid_motion = None  # Connection ID for motion events
 cid_release = None  # Connection ID for release events
+drawing_polygon = False  # Flag to track if we're currently drawing a polygon
 
 # Create a colormap with 10 distinct colors from hsv
 colors = plt.cm.hsv(np.linspace(0, 1, 10))
@@ -122,10 +123,6 @@ ax_low = plt.axes([0.07, 0.53, 0.2, 0.03])
 ax_high = plt.axes([0.07, 0.48, 0.2, 0.03])
 ax_gain = plt.axes([0.07, 0.43, 0.2, 0.03])
 ax_offset = plt.axes([0.07, 0.38, 0.2, 0.03])
-
-# Add threshold slider after the other sliders
-ax_thresh = plt.axes([0.07, 0.33, 0.2, 0.03])  # Position below offset slider
-thresh_slider = Slider(ax_thresh, 'Threshold', 0, 1, valinit=0.5)
 
 # Buttons at the bottom
 ax_reset = plt.axes([0.02, 0.25, 0.25, 0.04])
@@ -201,7 +198,6 @@ def reset(event):
     high_slider.reset()
     gain_slider.reset()
     offset_slider.reset()
-    thresh_slider.reset()
 
 def save_rgb(event):
     update()
@@ -250,7 +246,7 @@ def process_polygon(pts, polygon_num, ax, cube, output_dir, args, used_colors, c
     # Draw the closing edge if we have at least 3 points
     if len(pts) > 2:
         ax.plot([c[-1], c[0]], [r[-1], r[0]], '-', linewidth=2, color=color)
-    
+        
         # Calculate and plot the centroid with the label
         centroid_x = np.mean(c)
         centroid_y = np.mean(r)
@@ -280,10 +276,10 @@ def process_polygon(pts, polygon_num, ax, cube, output_dir, args, used_colors, c
         subsample = spectra
         subsample_coords = coords
 
-    avg_spectrum = spectra.mean(axis=0)
-    std_spectrum = spectra.std(axis=0)
+        avg_spectrum = spectra.mean(axis=0)
+        std_spectrum = spectra.std(axis=0)
 
-    wavelengths = np.linspace(350, 1000, cube.shape[2])
+        wavelengths = np.linspace(350, 1000, cube.shape[2])
     
     if show_spectrum:
         # Create a new figure for this polygon's spectrum
@@ -995,76 +991,113 @@ def toggle_edit_mode(event):
 def auto_segment_specimen(event):
     # Automatically segment the specimen from the background using image processing
     global all_polygons, spectrum_figs, drawing_polygon, current_points
+    global cid_key
     
-    # Get the current RGB image
-    low = low_slider.val
-    high = high_slider.val
-    gain = gain_slider.val
-    offset = offset_slider.val
-    p_low, p_high = np.percentile(rgb_raw, (low, high))
-    current_rgb = np.clip((rgb_raw - p_low) / (p_high - p_low), 0, 1)
-    current_rgb = np.clip(gain * current_rgb + offset, 0, 1)
+    # Create a new figure for the threshold dialog
+    dialog_fig = plt.figure(figsize=(4, 2))
+    dialog_ax = dialog_fig.add_subplot(111)
+    dialog_ax.text(0.5, 0.8, "Adjust threshold to segment specimen:",
+                  ha='center', va='center', transform=dialog_ax.transAxes)
+    dialog_ax.text(0.5, 0.6, "Press Enter when satisfied with the segmentation",
+                  ha='center', va='center', transform=dialog_ax.transAxes)
+    dialog_ax.set_axis_off()
     
-    # Convert to grayscale
-    gray = np.mean(current_rgb, axis=2)
+    # Create threshold slider in the dialog
+    ax_thresh = plt.axes([0.2, 0.3, 0.6, 0.2])
+    thresh_slider = Slider(ax_thresh, 'Threshold', 0, 1, valinit=0.5)
     
-    # Apply thresholding with manual threshold
-    thresh = thresh_slider.val
-    binary = gray > thresh
-    
-    # Clean up the binary image
-    binary = morphology.remove_small_objects(binary, min_size=100)
-    binary = morphology.remove_small_holes(binary, area_threshold=100)
-    
-    # Find contours
-    contours = measure.find_contours(binary, 0.5)
-    
-    if not contours:
-        # Create a new figure for the error message
-        dialog_fig = plt.figure(figsize=(3, 2))
-        dialog_ax = dialog_fig.add_subplot(111)
-        dialog_ax.text(0.5, 0.6, "Could not detect specimen.",
-                      ha='center', va='center', transform=dialog_ax.transAxes)
-        dialog_ax.text(0.5, 0.4, "Try adjusting the threshold.",
-                      ha='center', va='center', transform=dialog_ax.transAxes)
-        dialog_ax.set_axis_off()
+    def update_preview(val):
+        global drawing_polygon, current_points
+        # Get the current RGB image
+        low = low_slider.val
+        high = high_slider.val
+        gain = gain_slider.val
+        offset = offset_slider.val
+        p_low, p_high = np.percentile(rgb_raw, (low, high))
+        current_rgb = np.clip((rgb_raw - p_low) / (p_high - p_low), 0, 1)
+        current_rgb = np.clip(gain * current_rgb + offset, 0, 1)
         
-        # Create OK button
-        ax_ok = plt.axes([0.4, 0.2, 0.2, 0.2])
-        ok_button = Button(ax_ok, 'OK')
+        # Convert to grayscale
+        gray = np.mean(current_rgb, axis=2)
         
-        def on_ok(event):
+        # Apply thresholding with manual threshold
+        thresh = thresh_slider.val
+        binary = gray > thresh
+        
+        # Clean up the binary image
+        binary = morphology.remove_small_objects(binary, min_size=100)
+        binary = morphology.remove_small_holes(binary, area_threshold=100)
+        
+        # Find contours
+        contours = measure.find_contours(binary, 0.5)
+        
+        if not contours:
+            return
+        
+        # Get the largest contour (assuming it's the specimen)
+        largest_contour = max(contours, key=len)
+        
+        # Simplify the contour to reduce the number of points
+        simplified_contour = measure.approximate_polygon(largest_contour, tolerance=2.0)
+        
+        # Convert contour points to the correct format (x, y)
+        points = [(p[1], p[0]) for p in simplified_contour]  # Swap x and y
+        
+        # Get the next polygon number
+        polygon_num = get_next_polygon_number(output_dir, args)
+        # Get the color for this polygon number
+        color = get_color_for_polygon(polygon_num)
+        
+        # Store points in current_points instead of all_polygons
+        current_points = points.copy()  # Make sure we have a copy
+        drawing_polygon = True
+        
+        # Draw the preview
+        redraw_all_polygons(current_points, color)
+    
+    def on_key(event):
+        global drawing_polygon, current_points
+        if event.key == 'enter' or event.key == 'return':
+            # Store points before closing dialog
+            pts_to_process = current_points.copy() if current_points else []
+            
+            # Close the dialog
             plt.close(dialog_fig)
-        
-        ok_button.on_clicked(on_ok)
-        plt.show(block=True)
-        return
+            
+            # Process the polygon
+            if pts_to_process:
+                # Get the next polygon number
+                polygon_num = get_next_polygon_number(output_dir, args)
+                # Get the color for this polygon number
+                color = get_color_for_polygon(polygon_num)
+                
+                # Add to all_polygons dictionary
+                all_polygons[polygon_num] = {
+                    'points': pts_to_process,
+                    'color': color
+                }
+                
+                # Process the stored points and save data
+                update_polygon_data(polygon_num, pts_to_process, color)
+                
+                # Clear current points
+                current_points.clear()
+                drawing_polygon = False
+                redraw_all_polygons()
+                
+                print(f"\nProcessed polygon {polygon_num} with {len(pts_to_process)} points")
     
-    # Get the largest contour (assuming it's the specimen)
-    largest_contour = max(contours, key=len)
+    # Connect the slider to update the preview
+    thresh_slider.on_changed(update_preview)
     
-    # Simplify the contour to reduce the number of points
-    simplified_contour = measure.approximate_polygon(largest_contour, tolerance=2.0)
+    # Connect key event handler to the dialog
+    dialog_fig.canvas.mpl_connect('key_press_event', on_key)
     
-    # Convert contour points to the correct format (x, y)
-    points = [(p[1], p[0]) for p in simplified_contour]  # Swap x and y
+    # Show initial preview
+    update_preview(0.5)
     
-    # Get the next polygon number
-    polygon_num = get_next_polygon_number(output_dir, args)
-    # Get the color for this polygon number
-    color = get_color_for_polygon(polygon_num)
-    
-    # Store points in current_points instead of all_polygons
-    current_points = points
-    
-    # Set drawing_polygon to True so Enter key will work
-    drawing_polygon = True
-    
-    # Draw the preview
-    redraw_all_polygons(current_points, color)
-    
-    print(f"\nPreview of segmented specimen. Press Enter to confirm or adjust threshold and try again.")
-    print("The polygon will only be saved after pressing Enter.")
+    # Show dialog without blocking
+    plt.show(block=False)
 
 # Connect widgets
 low_slider.on_changed(update)
@@ -1086,9 +1119,6 @@ auto_button.on_clicked(auto_segment_specimen)
 
 # Connect the radio buttons
 vis_method.on_clicked(change_vis_method)
-
-# Connect the threshold slider
-thresh_slider.on_changed(update)
 
 # Connect the key event handler at startup. Apparently, without this, we will not be able
 # to use Enter/Return to save the results of the auto-segmentation process.
