@@ -119,18 +119,18 @@ ax.set_title("Adjust sliders, then click 'Continue to Polygon'")
 ax_radio = plt.axes([0.02, 0.66, 0.25, 0.25], frameon=True)  # Radio buttons at the top
 
 # Sliders below radio buttons - made shorter to fit labels
-ax_low = plt.axes([0.07, 0.53, 0.2, 0.03])
-ax_high = plt.axes([0.07, 0.48, 0.2, 0.03])
-ax_gain = plt.axes([0.07, 0.43, 0.2, 0.03])
-ax_offset = plt.axes([0.07, 0.38, 0.2, 0.03])
+ax_low = plt.axes([0.07, 0.56, 0.2, 0.03])
+ax_high = plt.axes([0.07, 0.51, 0.2, 0.03])
+ax_gain = plt.axes([0.07, 0.46, 0.2, 0.03])
+ax_offset = plt.axes([0.07, 0.41, 0.2, 0.03])
 
 # Buttons at the bottom
-ax_reset = plt.axes([0.02, 0.25, 0.25, 0.04])
-ax_save = plt.axes([0.02, 0.2, 0.25, 0.04])
-ax_continue = plt.axes([0.02, 0.15, 0.25, 0.04])
-ax_load = plt.axes([0.02, 0.1, 0.25, 0.04])
-ax_edit = plt.axes([0.02, 0.05, 0.25, 0.04])  # New Edit Polygon button
-ax_auto = plt.axes([0.02, 0.0, 0.25, 0.04])   # New Extract Specimen button
+ax_reset = plt.axes([0.02, 0.31, 0.25, 0.04])
+ax_save = plt.axes([0.02, 0.26, 0.25, 0.04])
+ax_continue = plt.axes([0.02, 0.21, 0.25, 0.04])
+ax_load = plt.axes([0.02, 0.16, 0.25, 0.04])
+ax_edit = plt.axes([0.02, 0.11, 0.25, 0.04])
+ax_auto = plt.axes([0.02, 0.06, 0.25, 0.04])
 
 # Sliders
 low_slider = Slider(ax_low, 'Low %', 0, 10, valinit=1)
