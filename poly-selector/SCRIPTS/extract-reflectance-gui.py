@@ -305,6 +305,34 @@ def change_vis_method(label):
         rgb_raw = create_single_band_rgb(band_options['Reverse (20,40,60)'])
     update()
 
+def plot_spectrum_on_axis(ax, wavelengths, avg_spectrum, std_spectrum, color, polygon_num, base_filename):
+    ax.plot(wavelengths, avg_spectrum, label='Mean Reflectance', color=color)
+    ax.fill_between(wavelengths, avg_spectrum - std_spectrum, avg_spectrum + std_spectrum, 
+                    alpha=0.3, color=color, label='Std Dev')
+    ax.set_title(f"Average Reflectance Spectrum for Polygon {polygon_num}")
+    ax.set_xlabel("Wavelength (nm)")
+    ax.set_ylabel("Reflectance")
+    ax.legend()
+    ax.grid(True)
+
+def save_spectrum_figure(fig, filename, wavelengths, avg_spectrum, std_spectrum, color, polygon_num, base_filename):
+    # Create a new figure for saving (no button)
+    save_fig = plt.figure(figsize=(8, 6))
+    save_ax = save_fig.add_subplot(111)
+    plot_spectrum_on_axis(save_ax, wavelengths, avg_spectrum, std_spectrum, color, polygon_num, base_filename)
+    save_fig.tight_layout()
+    save_fig.savefig(filename, dpi=300)
+    plt.close(save_fig)
+    print(f"Spectrum plot saved as: {filename}")
+
+def add_save_button_to_spectrum(fig, filename, wavelengths, avg_spectrum, std_spectrum, color, polygon_num, base_filename):
+    fig.subplots_adjust(bottom=0.18)
+    ax_save = fig.add_axes([0.4, 0.02, 0.2, 0.08])
+    save_button = Button(ax_save, 'Save Spectrum')
+    fig._save_button = save_button
+    save_button.on_clicked(lambda event: save_spectrum_figure(
+        fig, filename, wavelengths, avg_spectrum, std_spectrum, color, polygon_num, base_filename))
+
 def process_polygon(pts, polygon_num, ax, cube, output_dir, args, used_colors, colors, save_data=True, show_spectrum=True):
     """Process a polygon and extract reflectance data.
     
@@ -375,16 +403,13 @@ def process_polygon(pts, polygon_num, ax, cube, output_dir, args, used_colors, c
         # Create a new figure for this polygon's spectrum
         spectrum_fig = plt.figure(figsize=(8, 6))
         spectrum_ax = spectrum_fig.add_subplot(111)
-        spectrum_ax.plot(wavelengths, avg_spectrum, label='Mean Reflectance', color=color)
-        spectrum_ax.fill_between(wavelengths, avg_spectrum - std_spectrum, avg_spectrum + std_spectrum, 
-                               alpha=0.3, color=color, label='Std Dev')
-        spectrum_ax.set_title(f"Average Reflectance Spectrum for Polygon {polygon_num}")
-        spectrum_ax.set_xlabel("Wavelength (nm)")
-        spectrum_ax.set_ylabel("Reflectance")
-        spectrum_ax.legend()
-        spectrum_ax.grid(True)
+        plot_spectrum_on_axis(spectrum_ax, wavelengths, avg_spectrum, std_spectrum, color, polygon_num, args.filename)
         # Position the figure window
-        spectrum_fig.canvas.manager.set_window_title(f"Polygon {polygon_num} Spectrum")
+        spectrum_fig.canvas.manager.set_window_title(f"{args.filename} polygon {polygon_num} spectrum")
+        # Add Save Spectrum button below the plot
+        pdf_filename = os.path.join(output_dir, f"{args.filename}_polygon_{polygon_num}_spectrum.pdf")
+        add_save_button_to_spectrum(
+            spectrum_fig, pdf_filename, wavelengths, avg_spectrum, std_spectrum, color, polygon_num, args.filename)
         spectrum_fig.canvas.draw()
         plt.show(block=False)
 
@@ -445,28 +470,18 @@ def update_spectrum_plot(polygon_num, points, color):
         spectrum_fig = spectrum_figs[polygon_num]
         spectrum_ax = spectrum_fig.axes[0]
         spectrum_ax.clear()
-        spectrum_ax.plot(wavelengths, avg_spectrum, label='Mean Reflectance', color=color)
-        spectrum_ax.fill_between(wavelengths, avg_spectrum - std_spectrum, avg_spectrum + std_spectrum, 
-                               alpha=0.3, color=color, label='Std Dev')
-        spectrum_ax.set_title(f"Average Reflectance Spectrum for Polygon {polygon_num}")
-        spectrum_ax.set_xlabel("Wavelength (nm)")
-        spectrum_ax.set_ylabel("Reflectance")
-        spectrum_ax.legend()
-        spectrum_ax.grid(True)
+        plot_spectrum_on_axis(spectrum_ax, wavelengths, avg_spectrum, std_spectrum, color, polygon_num, args.filename)
         spectrum_fig.canvas.draw()
     else:
         # Create new plot
         spectrum_fig = plt.figure(figsize=(8, 6))
         spectrum_ax = spectrum_fig.add_subplot(111)
-        spectrum_ax.plot(wavelengths, avg_spectrum, label='Mean Reflectance', color=color)
-        spectrum_ax.fill_between(wavelengths, avg_spectrum - std_spectrum, avg_spectrum + std_spectrum, 
-                               alpha=0.3, color=color, label='Std Dev')
-        spectrum_ax.set_title(f"Average Reflectance Spectrum for Polygon {polygon_num}")
-        spectrum_ax.set_xlabel("Wavelength (nm)")
-        spectrum_ax.set_ylabel("Reflectance")
-        spectrum_ax.legend()
-        spectrum_ax.grid(True)
-        spectrum_fig.canvas.manager.set_window_title(f"Polygon {polygon_num} Spectrum")
+        plot_spectrum_on_axis(spectrum_ax, wavelengths, avg_spectrum, std_spectrum, color, polygon_num, args.filename)
+        spectrum_fig.canvas.manager.set_window_title(f"{args.filename} polygon {polygon_num} spectrum")
+        # Add Save Spectrum button below the plot
+        pdf_filename = os.path.join(output_dir, f"{args.filename}_polygon_{polygon_num}_spectrum.pdf")
+        add_save_button_to_spectrum(
+            spectrum_fig, pdf_filename, wavelengths, avg_spectrum, std_spectrum, color, polygon_num, args.filename)
         spectrum_figs[polygon_num] = spectrum_fig
         spectrum_fig.canvas.draw()
         plt.show(block=False)
